@@ -83,4 +83,4 @@ Verivo/
 
 ---
 
-Projet réalisé dans le cadre de la formation [Alyra](https://www.alyra.fr/).
+Projet réalisé dans le cadre de la formation [Alyra]
