@@ -57,6 +57,7 @@ Verivo/
 ├── docs/               # Documentation
 └── frontend/           # Interface utilisateur
 ```
+<img width="1536" height="1024" alt="Workflow du projet 15_00_50-20260227-140051" src="https://github.com/user-attachments/assets/7367f679-c65e-47ce-82f8-4274c44fb503" />
 
 ## Infos projet
 
