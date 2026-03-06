@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: verivo-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: verivo
+      POSTGRES_PASSWORD: verivo_secret
+      POSTGRES_DB: verivo
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: verivo-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://verivo:verivo_secret@postgres:5432/verivo?schema=public
+      PORT: 3001
+    depends_on:
+      - postgres
+
+  frontend:
+    build: ./frontend
+    container_name: verivo-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  nginx:
+    build: ./nginx
+    container_name: verivo-nginx
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  postgres_data:

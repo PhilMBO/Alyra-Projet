@@ -1,0 +1,78 @@
+.org-list-section {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.org-list-section h2 {
+  margin-bottom: 1rem;
+  color: #1a1a2e;
+}
+
+.org-list-empty {
+  color: #999;
+  text-align: center;
+  padding: 1rem;
+}
+
+.org-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.org-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.org-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.org-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.org-info h3 {
+  font-size: 1rem;
+  margin-bottom: 0.15rem;
+}
+
+.org-status {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.status-active {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-suspended {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-archived {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.org-date {
+  color: #999;
+  font-size: 0.85rem;
+}
