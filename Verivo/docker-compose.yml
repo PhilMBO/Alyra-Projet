@@ -26,6 +26,10 @@ services:
     build: ./frontend
     container_name: verivo-frontend
     restart: unless-stopped
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
     depends_on:
       - backend
 

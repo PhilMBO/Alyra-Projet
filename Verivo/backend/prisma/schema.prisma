@@ -13,13 +13,36 @@ enum OrganizationStatus {
   ARCHIVED
 }
 
+enum AdminRole {
+  SUPER_ADMIN
+  ORG_ADMIN
+}
+
+model Admin {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  displayName  String    @map("display_name")
+  role         AdminRole @default(ORG_ADMIN)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  organizations Organization[]
+
+  @@map("admins")
+}
+
 model Organization {
   id        String             @id @default(uuid())
   name      String
+  slug      String             @unique
   logo      String?
   status    OrganizationStatus @default(ACTIVE)
+  adminId   String             @map("admin_id")
   createdAt DateTime           @default(now()) @map("created_at")
   updatedAt DateTime           @updatedAt @map("updated_at")
+
+  admin Admin @relation(fields: [adminId], references: [id])
 
   @@map("organizations")
 }

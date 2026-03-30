@@ -29,6 +29,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
+        <img src="/logoverivo.png" alt="Verivo" className="app-header-logo" />
         <h1>Verivo</h1>
         <p>Gestion des organisations</p>
       </header>

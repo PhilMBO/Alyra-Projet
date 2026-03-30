@@ -1,0 +1,22 @@
+{
+  "name": "verivo-blockchain",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Smart contracts Verivo — Hardhat 3 + Solidity 0.8.28",
+  "scripts": {
+    "build": "hardhat build",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:amoy": "hardhat run scripts/deploy.ts --network amoy",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia"
+  },
+  "devDependencies": {
+    "hardhat": "^3.2.0",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.0",
+    "@openzeppelin/contracts": "^5.1.0",
+    "typescript": "^5.4.0",
+    "ts-node": "^10.9.0",
+    "@types/node": "^22.0.0"
+  }
+}

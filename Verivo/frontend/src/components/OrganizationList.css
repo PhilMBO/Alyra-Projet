@@ -1,17 +1,18 @@
 .org-list-section {
-  background: white;
-  border-radius: 8px;
+  background: var(--color-background);
+  border-radius: var(--radius);
   padding: 1.5rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--color-border);
 }
 
 .org-list-section h2 {
   margin-bottom: 1rem;
-  color: #1a1a2e;
+  color: var(--color-primary);
 }
 
 .org-list-empty {
-  color: #999;
+  color: var(--color-text-secondary);
   text-align: center;
   padding: 1rem;
 }
@@ -28,8 +29,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  border: 1px solid #eee;
-  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  transition: background-color 0.2s;
+}
+
+.org-item:hover {
+  background-color: var(--color-surface);
 }
 
 .org-info {
@@ -41,13 +47,14 @@
 .org-logo {
   width: 40px;
   height: 40px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   object-fit: cover;
 }
 
 .org-info h3 {
   font-size: 1rem;
   margin-bottom: 0.15rem;
+  color: var(--color-text);
 }
 
 .org-status {
@@ -58,21 +65,21 @@
 }
 
 .status-active {
-  background-color: #d4edda;
-  color: #155724;
+  background-color: rgba(5, 150, 105, 0.1);
+  color: var(--color-success);
 }
 
 .status-suspended {
-  background-color: #fff3cd;
-  color: #856404;
+  background-color: rgba(217, 119, 6, 0.1);
+  color: var(--color-warning);
 }
 
 .status-archived {
-  background-color: #f8d7da;
-  color: #721c24;
+  background-color: rgba(220, 38, 38, 0.1);
+  color: var(--color-error);
 }
 
 .org-date {
-  color: #999;
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
