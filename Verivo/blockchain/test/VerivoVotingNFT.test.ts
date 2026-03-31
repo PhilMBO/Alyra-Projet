@@ -96,4 +96,52 @@ describe("VerivoVotingNFT", function () {
         );
       });
     });
+    // ============================================================
+    // ÉTAPE 3 — Restrictions
+    // ============================================================
+    // Objectif : vérifier les gardes-fous du contrat
+    //
+    // Concepts :
+    //   revert → la transaction échoue et annule tout changement
+    //   soul-bound → NFT non-transférable (pas de transferFrom)
+    //   1 NFT par adresse → empêche le double vote
+    //   onlyRole → seul le MINTER peut mint, pas n'importe qui
+    // ============================================================
+    describe("Restrictions", function () {
+      it("devrait empêcher un non-MINTER de mint", async function () {
+        // voter1 n'a pas MINTER_ROLE → la transaction doit revert
+        await assert.rejects(
+          votingNFT.write.safeMint([voter1.account.address], {
+            account: voter1.account,
+          })
+        );
+      });
+
+      it("devrait empêcher de mint un 2e NFT pour la même adresse", async function () {
+        // Premier mint → OK
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        // Deuxième mint pour la même adresse → doit revert
+        await assert.rejects(
+          votingNFT.write.safeMint([voter1.account.address], {
+            account: minter.account,
+          })
+        );
+      });
+
+      it("devrait empêcher le transfert du NFT (soul-bound)", async function () {
+        // Mint un NFT pour voter1
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        // voter1 tente de transférer son NFT à voter2 → doit revert
+        await assert.rejects(
+          votingNFT.write.transferFrom(
+            [voter1.account.address, voter2.account.address, 0n],
+            { account: voter1.account }
+          )
+        );
+      });
+    });
 });

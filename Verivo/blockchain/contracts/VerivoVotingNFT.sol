@@ -18,8 +18,20 @@ contract VerivoVotingNFT is ERC721, AccessControl {
     /// @notice Mint un NFT de vote pour une adresse
     /// @param to Adresse qui recevra le NFT
     function safeMint(address to) external onlyRole(MINTER_ROLE) {
+        require(balanceOf(to) == 0, "Adresse possede deja un NFT de vote");
         _safeMint(to, _nextTokenId);
         _nextTokenId++;
+    }
+    /// @notice Bloque tout transfert — NFT soul-bound
+    /// @dev _update est appelé par _safeMint ET transferFrom
+    ///      Si from == address(0) → c'est un mint → on laisse passer
+    ///      Sinon → c'est un transfert → on revert
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+        address from = _ownerOf(tokenId);
+        if (from != address(0)) {
+            revert("NFT soul-bound : transfert interdit");
+        }
+        return super._update(to, tokenId, auth);
     }
     // ====== Résolution du conflit ERC721 / AccessControl on utilise les deux fonctions supportsInterface== 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
