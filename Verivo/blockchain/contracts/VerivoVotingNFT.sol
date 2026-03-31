@@ -24,10 +24,15 @@ contract VerivoVotingNFT is ERC721, AccessControl {
     }
     /// @notice Brûle un NFT de vote — révoque le droit de vote
     /// @param tokenId L'id du NFT à brûler
-      function burn(uint256 tokenId) external onlyRole(MINTER_ROLE) {
+    function burn(uint256 tokenId) external onlyRole(MINTER_ROLE) {
           _burn(tokenId);
-      }
-
+    }
+    /// @notice Vérifie si une adresse possède un droit de vote
+    /// @param account L'adresse à vérifier
+    /// @return true si l'adresse possède un NFT de vote
+    function hasVotingRight(address account) external view returns (bool) {
+        return balanceOf(account) > 0;
+    }
     /// @notice Bloque tout transfert — NFT soul-bound
     /// @dev _update est appelé par _safeMint ET transferFrom
     ///      Si from == address(0) → c'est un mint → on laisse passer

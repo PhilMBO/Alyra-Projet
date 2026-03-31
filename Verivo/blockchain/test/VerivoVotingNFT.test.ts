@@ -190,5 +190,94 @@ describe("VerivoVotingNFT", function () {
         );
       });
     });
+    // ============================================================
+    // ÉTAPE 5 — Lecture (hasVotingRight)
+    // ============================================================
+    // Objectif : fournir une fonction simple pour vérifier
+    //   si une adresse possède un droit de vote
+    //
+    // Concepts :
+    //   view function → lecture seule, pas de gas en appel externe
+    //   balanceOf > 0 → possède au moins un NFT = a le droit de vote
+    //   Cette fonction sera appelée par le contrat de voting
+    // ============================================================
+    describe("Lecture", function () {
+      it("devrait retourner true si l'adresse possède un NFT de vote", async function () {
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        const hasRight = await votingNFT.read.hasVotingRight([
+          voter1.account.address,
+        ]);
+        assert.equal(hasRight, true);
+      });
 
+      it("devrait retourner false si l'adresse ne possède pas de NFT", async function () {
+        const hasRight = await votingNFT.read.hasVotingRight([
+          voter2.account.address,
+        ]);
+        assert.equal(hasRight, false);
+      });
+
+      it("devrait retourner false après un burn", async function () {
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        await votingNFT.write.burn([0n], {
+          account: minter.account,
+        });
+        const hasRight = await votingNFT.read.hasVotingRight([
+          voter1.account.address,
+        ]);
+        assert.equal(hasRight, false);
+      });
+    });
+      // ============================================================
+    // ÉTAPE 6 — Gestion des rôles (Admin)
+    // ============================================================
+    // Objectif : vérifier que l'admin peut gérer les minters
+    //
+    // Concepts :
+    //   grantRole(role, account) → donne un rôle (hérité AccessControl)
+    //   revokeRole(role, account) → retire un rôle
+    //   DEFAULT_ADMIN_ROLE → seul rôle autorisé à grant/revoke
+    //   Un non-admin ne peut pas gérer les rôles
+    // ============================================================
+    describe("Gestion des rôles", function () {
+      it("devrait permettre à l'admin d'ajouter un nouveau minter", async function () {
+        const MINTER_ROLE = await votingNFT.read.MINTER_ROLE();
+        // owner (admin) donne le rôle minter à voter1
+        await votingNFT.write.grantRole([MINTER_ROLE, voter1.account.address], {
+          account: owner.account,
+        });
+        const hasRole = await votingNFT.read.hasRole([
+          MINTER_ROLE,
+          voter1.account.address,
+        ]);
+        assert.equal(hasRole, true);
+      });
+
+      it("devrait permettre à l'admin de retirer le rôle minter", async function () {
+        const MINTER_ROLE = await votingNFT.read.MINTER_ROLE();
+        // owner retire le rôle minter
+        await votingNFT.write.revokeRole([MINTER_ROLE, minter.account.address], {
+          account: owner.account,
+        });
+        const hasRole = await votingNFT.read.hasRole([
+          MINTER_ROLE,
+          minter.account.address,
+        ]);
+        assert.equal(hasRole, false);
+      });
+
+      it("devrait empêcher un non-admin de gérer les rôles", async function () {
+        const MINTER_ROLE = await votingNFT.read.MINTER_ROLE();
+        // voter1 (non-admin) tente de se donner le rôle minter → revert
+        await assert.rejects(
+          votingNFT.write.grantRole([MINTER_ROLE, voter1.account.address], {
+            account: voter1.account,
+          })
+        );
+      });
+    });
 });
