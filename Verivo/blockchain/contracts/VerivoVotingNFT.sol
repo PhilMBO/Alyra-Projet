@@ -44,6 +44,16 @@ contract VerivoVotingNFT is ERC721, AccessControl {
         }
         return super._update(to, tokenId, auth);
     }
+    /// @notice Bloque approve — NFT soul-bound, pas de délégation
+    function approve(address, uint256) public pure override {
+        revert("NFT soul-bound : approve interdit");
+    }
+
+    /// @notice Bloque setApprovalForAll — NFT soul-bound
+    function setApprovalForAll(address, bool) public pure override {
+        revert("NFT soul-bound : approve interdit");
+    }
+
     // ====== Résolution du conflit ERC721 / AccessControl on utilise les deux fonctions supportsInterface== 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);

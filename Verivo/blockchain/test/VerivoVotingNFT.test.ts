@@ -280,4 +280,61 @@ describe("VerivoVotingNFT", function () {
         );
       });
     });
+        // ============================================================
+    // ÉTAPE 7 — Edge cases
+    // ============================================================
+    // Objectif : couvrir les cas limites du soul-bound
+    //
+    // Concepts :
+    //   re-mint → est-ce qu'on peut redonner un droit de vote ?
+    //   safeTransferFrom → 2e méthode de transfert ERC721
+    //   approve → mécanisme de délégation ERC721 (interdit ici)
+    // ============================================================
+    describe("Edge cases", function () {
+      it("devrait permettre de re-mint après un burn", async function () {
+        // Mint → burn → re-mint
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        await votingNFT.write.burn([0n], { account: minter.account });
+
+        // Re-mint → doit fonctionner, le voter retrouve son droit
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        const hasRight = await votingNFT.read.hasVotingRight([
+          voter1.account.address,
+        ]);
+        assert.equal(hasRight, true);
+      });
+
+      it("devrait empêcher safeTransferFrom (soul-bound)", async function () {
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        await assert.rejects(
+          votingNFT.write.safeTransferFrom(
+            [voter1.account.address, voter2.account.address, 0n],
+            { account: voter1.account }
+          )
+        );
+      });
+
+      it("devrait empêcher approve (soul-bound)", async function () {
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        await assert.rejects(
+          votingNFT.write.approve([voter2.account.address, 0n], {
+            account: voter1.account,
+          })
+        );
+      });
+
+      it("devrait revert si on burn un tokenId inexistant", async function () {
+        await assert.rejects(
+          votingNFT.write.burn([999n], { account: minter.account })
+        );
+      });
+    });
 });
