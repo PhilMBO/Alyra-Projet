@@ -10,9 +10,16 @@ contract VerivoVotingNFT is ERC721, AccessControl {
     // ----------- DEFAULT_ADMIN_ROLE : addresse Verivo admin -----
     // ====================================================================
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    uint256 private _nextTokenId;
     constructor(address minter) ERC721("VerivoVotingNFT", "VVOTE") {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(MINTER_ROLE, minter);
+       _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+       _grantRole(MINTER_ROLE, minter);
+    }
+    /// @notice Mint un NFT de vote pour une adresse
+    /// @param to Adresse qui recevra le NFT
+    function safeMint(address to) external onlyRole(MINTER_ROLE) {
+        _safeMint(to, _nextTokenId);
+        _nextTokenId++;
     }
     // ====== Résolution du conflit ERC721 / AccessControl on utilise les deux fonctions supportsInterface== 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, AccessControl) returns (bool) {

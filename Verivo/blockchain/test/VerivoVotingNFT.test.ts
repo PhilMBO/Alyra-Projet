@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import hre from "hardhat";
+import { network } from "hardhat";
 
 describe("VerivoVotingNFT", function () {
   let votingNFT: any;
@@ -14,10 +14,10 @@ describe("VerivoVotingNFT", function () {
     // getWalletClients() → wallets de test Hardhat
     // owner  = déployeur (DEFAULT_ADMIN_ROLE)
     // minter = celui qui mint/burn les NFT (MINTER_ROLE)
-    [owner, minter, voter1, voter2] = await hre.viem.getWalletClients();
-
-    // Déploie le contrat en passant l'adresse du minter
-    votingNFT = await hre.viem.deployContract("VerivoVotingNFT", [
+    const connection = await network.connect();
+    const { viem } = connection;
+    [owner, minter, voter1, voter2] = await viem.getWalletClients();
+    votingNFT = await viem.deployContract("VerivoVotingNFT", [
       minter.account.address,
     ]);
   });
@@ -63,4 +63,37 @@ describe("VerivoVotingNFT", function () {
       assert.equal(hasAdminRole, true);
     });
   });
+
+    // ============================================================
+    // ÉTAPE 2 — Mint
+    // ============================================================
+    // Objectif : vérifier que le MINTER peut créer un NFT de vote
+    //
+    // Concepts :
+    //   safeMint(address to) → crée un NFT pour l'adresse donnée
+    //   onlyRole(MINTER_ROLE) → seul le minter peut appeler
+    //   balanceOf(address) → nombre de NFT possédés (hérité ERC721)
+    //   ownerOf(tokenId) → propriétaire du NFT (hérité ERC721)
+    // ============================================================
+    describe("Mint", function () {
+      it("devrait permettre au MINTER de mint un NFT pour un voter", async function () {
+        // write.safeMint → appelle la fonction en transaction
+        // account: minter.account → signe avec le wallet minter
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        // balanceOf → voter1 possède maintenant 1 NFT
+        const balance = await votingNFT.read.balanceOf([
+          voter1.account.address,
+        ]);
+        assert.equal(balance, 1n); // 1n = BigInt(1), Solidity renvoie uint256
+
+        // ownerOf(tokenId 0) → le premier NFT minté a l'id 0
+        const nftOwner = await votingNFT.read.ownerOf([0n]);
+        assert.equal(
+          nftOwner.toLowerCase(),
+          voter1.account.address.toLowerCase()
+        );
+      });
+    });
 });
