@@ -8,7 +8,12 @@ describe("VerivoVotingNFT", function () {
   let minter: any;
   let voter1: any;
   let voter2: any;
-
+  // Helper pour mint un NFT rapidement
+  async function mintTo(address: string) {
+    await votingNFT.write.safeMint([address], {
+      account: minter.account,
+    });
+  }
   beforeEach(async function () {
     // ─── Setup ───────────────────────────────────────────────
     // getWalletClients() → wallets de test Hardhat
@@ -79,9 +84,7 @@ describe("VerivoVotingNFT", function () {
       it("devrait permettre au MINTER de mint un NFT pour un voter", async function () {
         // write.safeMint → appelle la fonction en transaction
         // account: minter.account → signe avec le wallet minter
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         // balanceOf → voter1 possède maintenant 1 NFT
         const balance = await votingNFT.read.balanceOf([
           voter1.account.address,
@@ -119,9 +122,7 @@ describe("VerivoVotingNFT", function () {
 
       it("devrait empêcher de mint un 2e NFT pour la même adresse", async function () {
         // Premier mint → OK
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         // Deuxième mint pour la même adresse → doit revert
         await assert.rejects(
           votingNFT.write.safeMint([voter1.account.address], {
@@ -132,9 +133,7 @@ describe("VerivoVotingNFT", function () {
 
       it("devrait empêcher le transfert du NFT (soul-bound)", async function () {
         // Mint un NFT pour voter1
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         // voter1 tente de transférer son NFT à voter2 → doit revert
         await assert.rejects(
           votingNFT.write.transferFrom(
@@ -158,9 +157,7 @@ describe("VerivoVotingNFT", function () {
     describe("Burn", function () {
       it("devrait permettre au MINTER de burn un NFT", async function () {
         // Mint puis burn
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         await votingNFT.write.burn([0n], {
           account: minter.account,
         });
@@ -179,9 +176,7 @@ describe("VerivoVotingNFT", function () {
 
       it("devrait empêcher un non-MINTER de burn", async function () {
         // Mint un NFT pour voter1
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         // voter1 tente de burn son propre NFT → revert
         await assert.rejects(
           votingNFT.write.burn([0n], {
@@ -203,9 +198,7 @@ describe("VerivoVotingNFT", function () {
     // ============================================================
     describe("Lecture", function () {
       it("devrait retourner true si l'adresse possède un NFT de vote", async function () {
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         const hasRight = await votingNFT.read.hasVotingRight([
           voter1.account.address,
         ]);
@@ -220,9 +213,7 @@ describe("VerivoVotingNFT", function () {
       });
 
       it("devrait retourner false après un burn", async function () {
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         await votingNFT.write.burn([0n], {
           account: minter.account,
         });
@@ -293,15 +284,11 @@ describe("VerivoVotingNFT", function () {
     describe("Edge cases", function () {
       it("devrait permettre de re-mint après un burn", async function () {
         // Mint → burn → re-mint
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         await votingNFT.write.burn([0n], { account: minter.account });
 
         // Re-mint → doit fonctionner, le voter retrouve son droit
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         const hasRight = await votingNFT.read.hasVotingRight([
           voter1.account.address,
         ]);
@@ -309,9 +296,7 @@ describe("VerivoVotingNFT", function () {
       });
 
       it("devrait empêcher safeTransferFrom (soul-bound)", async function () {
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         await assert.rejects(
           votingNFT.write.safeTransferFrom(
             [voter1.account.address, voter2.account.address, 0n],
@@ -321,9 +306,7 @@ describe("VerivoVotingNFT", function () {
       });
 
       it("devrait empêcher approve (soul-bound)", async function () {
-        await votingNFT.write.safeMint([voter1.account.address], {
-          account: minter.account,
-        });
+        await mintTo(voter1.account.address);
         await assert.rejects(
           votingNFT.write.approve([voter2.account.address, 0n], {
             account: voter1.account,
@@ -334,6 +317,62 @@ describe("VerivoVotingNFT", function () {
       it("devrait revert si on burn un tokenId inexistant", async function () {
         await assert.rejects(
           votingNFT.write.burn([999n], { account: minter.account })
+        );
+      });
+    });
+        // ============================================================
+    // ÉTAPE 8 — Mint en batch
+    // ============================================================
+    // Objectif : le minter peut mint plusieurs NFT en une transaction
+    //
+    // Concepts :
+    //   safeMintBatch(address[]) → mint un NFT pour chaque adresse
+    //   gas optimization → 1 transaction au lieu de N
+    //   les mêmes règles s'appliquent (pas de doublon, onlyRole)
+    // ============================================================
+    describe("Mint batch", function () {
+      it("devrait permettre au MINTER de mint en batch", async function () {
+        await votingNFT.write.safeMintBatch(
+          [[voter1.account.address, voter2.account.address]],
+          { account: minter.account }
+        );
+
+        const balance1 = await votingNFT.read.balanceOf([voter1.account.address]);
+        const balance2 = await votingNFT.read.balanceOf([voter2.account.address]);
+        assert.equal(balance1, 1n);
+        assert.equal(balance2, 1n);
+      });
+
+      it("devrait revert si une adresse du batch possède déjà un NFT", async function () {
+        await mintTo(voter1.account.address);
+        // voter1 a déjà un NFT → tout le batch doit revert
+        await assert.rejects(
+          votingNFT.write.safeMintBatch(
+            [[voter1.account.address, voter2.account.address]],
+            { account: minter.account }
+          )
+        );
+      });
+
+      it("devrait empêcher un non-MINTER de mint en batch", async function () {
+        await assert.rejects(
+          votingNFT.write.safeMintBatch(
+            [[voter1.account.address, voter2.account.address]],
+            { account: voter1.account }
+          )
+        );
+      });
+      it("devrait revert si le batch dépasse MAX_BATCH_SIZE", async function () {
+        // Crée un tableau de 201 adresses (au-dessus de la limite)
+        // On réutilise voter1.account.address pour simplifier
+        // mais le require sur le doublon passera avant celui du batch size
+        // → on utilise des adresses générées
+        const tooMany = Array.from({ length: 201 }, (_, i) =>`0x${(i + 1).toString(16).padStart(40, "0")}`
+        );
+        await assert.rejects(
+          votingNFT.write.safeMintBatch([tooMany], {
+            account: minter.account,
+          })
         );
       });
     });

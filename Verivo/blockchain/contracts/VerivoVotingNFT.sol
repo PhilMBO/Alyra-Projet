@@ -11,6 +11,7 @@ contract VerivoVotingNFT is ERC721, AccessControl {
     // ====================================================================
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     uint256 private _nextTokenId;
+    uint256 public constant MAX_BATCH_SIZE = 200;
     constructor(address minter) ERC721("VerivoVotingNFT", "VVOTE") {
        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
        _grantRole(MINTER_ROLE, minter);
@@ -22,6 +23,17 @@ contract VerivoVotingNFT is ERC721, AccessControl {
         _safeMint(to, _nextTokenId);
         _nextTokenId++;
     }
+    /// @notice Mint un NFT de vote pour chaque adresse du tableau
+    /// @param recipients Liste des adresses qui recevront un NFT
+    function safeMintBatch(address[] calldata recipients) external onlyRole(MINTER_ROLE) {
+        require(recipients.length <= MAX_BATCH_SIZE,"Batch trop grand");
+        for (uint256 i = 0; i < recipients.length; i++) {
+            require(balanceOf(recipients[i]) == 0, "Adresse possede deja un NFT de vote");
+            _safeMint(recipients[i], _nextTokenId);
+            _nextTokenId++;
+        }
+    }
+
     /// @notice Brûle un NFT de vote — révoque le droit de vote
     /// @param tokenId L'id du NFT à brûler
     function burn(uint256 tokenId) external onlyRole(MINTER_ROLE) {
