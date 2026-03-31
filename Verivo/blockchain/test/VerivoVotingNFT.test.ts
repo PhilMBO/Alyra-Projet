@@ -144,4 +144,51 @@ describe("VerivoVotingNFT", function () {
         );
       });
     });
+    // ============================================================
+    // ÉTAPE 4 — Burn (révocation du droit de vote)
+    // ============================================================
+    // Objectif : vérifier que le MINTER peut brûler un NFT
+    //
+    // Concepts :
+    //   burn(tokenId) → détruit le NFT, le retire de la circulation
+    //   balanceOf revient à 0 après un burn
+    //   ownerOf sur un token brûlé → revert (le token n'existe plus)
+    //   seul le MINTER peut burn, pas le propriétaire du NFT
+    // ============================================================
+    describe("Burn", function () {
+      it("devrait permettre au MINTER de burn un NFT", async function () {
+        // Mint puis burn
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        await votingNFT.write.burn([0n], {
+          account: minter.account,
+        });
+
+        // balanceOf → retombe à 0
+        const balance = await votingNFT.read.balanceOf([
+          voter1.account.address,
+        ]);
+        assert.equal(balance, 0n);
+
+        // ownerOf → revert car le token n'existe plus
+        await assert.rejects(
+          votingNFT.read.ownerOf([0n])
+        );
+      });
+
+      it("devrait empêcher un non-MINTER de burn", async function () {
+        // Mint un NFT pour voter1
+        await votingNFT.write.safeMint([voter1.account.address], {
+          account: minter.account,
+        });
+        // voter1 tente de burn son propre NFT → revert
+        await assert.rejects(
+          votingNFT.write.burn([0n], {
+            account: voter1.account,
+          })
+        );
+      });
+    });
+
 });

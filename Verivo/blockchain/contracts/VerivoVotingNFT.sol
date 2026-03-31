@@ -22,13 +22,19 @@ contract VerivoVotingNFT is ERC721, AccessControl {
         _safeMint(to, _nextTokenId);
         _nextTokenId++;
     }
+    /// @notice Brûle un NFT de vote — révoque le droit de vote
+    /// @param tokenId L'id du NFT à brûler
+      function burn(uint256 tokenId) external onlyRole(MINTER_ROLE) {
+          _burn(tokenId);
+      }
+
     /// @notice Bloque tout transfert — NFT soul-bound
     /// @dev _update est appelé par _safeMint ET transferFrom
     ///      Si from == address(0) → c'est un mint → on laisse passer
     ///      Sinon → c'est un transfert → on revert
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         address from = _ownerOf(tokenId);
-        if (from != address(0)) {
+        if (from != address(0) && to != address(0)) {
             revert("NFT soul-bound : transfert interdit");
         }
         return super._update(to, tokenId, auth);
