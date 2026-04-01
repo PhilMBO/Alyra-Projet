@@ -40,6 +40,23 @@ contract VerivoVoting is Ownable {
     /// @dev Le frontend écoute cet event pour mettre à jour l'interface
     event VotingOpened();
 
+    /// @notice Indique si une adresse a déjà voté
+    /// @dev mapping(adresse du votant => true s'il a voté)
+    mapping(address => bool) public hasVoted;
+
+    /// @notice Nombre de votes reçus par chaque choix
+    /// @dev mapping(index du choix => nombre de votes)
+    mapping(uint256 => uint256) public votesPerChoice;
+
+    /// @notice Événement émis lorsqu'un vote est enregistré
+    /// @param voter Adresse du votant
+    /// @param choiceIndex Index du choix voté
+    event VoteCast(address indexed voter, uint256 choiceIndex);
+    
+    /// @notice Événement émis lorsque le scrutin est fermé
+    /// @dev Le frontend écoute cet event pour bloquer l'interface de vote
+    event VotingClosed();
+
     /// @notice Vérifie que l'appelant est l'administrateur de l'organisation
     /// @dev Modifier custom réutilisable sur openVoting, closeVoting, tally...
     ///      Le "_;" indique où le corps de la fonction décorée s'exécute
@@ -78,7 +95,33 @@ contract VerivoVoting is Ownable {
         status = Status.Open;
         emit VotingOpened();
     }
-
+    /// @notice Enregistre un vote pour un choix
+    /// @param _choiceIndex Index du choix dans le tableau choices (0, 1, 2...)
+    /// @dev Vérifie dans l'ordre :
+    ///      1. Le scrutin est ouvert (status == Open)
+    ///      2. Le votant possède un NFT (via hasVotingRight sur le contrat NFT)
+    ///      3. Le votant n'a pas déjà voté (hasVoted == false)
+    ///      4. L'index du choix est valide (< choices.length)
+    ///      Émet VoteCast pour notifier les listeners
+    function castVote(uint256 _choiceIndex) external {
+        require(status == Status.Open, "Le scrutin n'est pas ouvert");
+        require(votingNFT.hasVotingRight(msg.sender), "Vous n'avez pas le droit de vote");
+        require(!hasVoted[msg.sender], "Vous avez deja vote");
+        require(_choiceIndex < choices.length, "Choix invalide");
+        hasVoted[msg.sender] = true;
+        votesPerChoice[_choiceIndex]++;
+        emit VoteCast(msg.sender, _choiceIndex);
+    }
+    /// @notice Ferme le scrutin — passe le statut de Open à Closed
+    /// @dev Seul l'organisationAdministrator peut appeler (modifier)
+    ///      Le scrutin doit être Open sinon revert
+    ///      Après fermeture, castVote revert car status != Open
+    ///      Émet VotingClosed pour notifier les listeners
+    function closeVoting() external onlyOrganisationAdministrator {
+        require(status == Status.Open, "Le scrutin n'est pas ouvert");
+        status = Status.Closed;
+        emit VotingClosed();
+    }
     /// @notice Retourne la liste des choix du scrutin
     /// @return La liste des choix sous forme de tableau de strings en mémoire
     /// @dev external view → lecture seule, pas de gas en appel externe

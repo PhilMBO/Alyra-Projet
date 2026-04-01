@@ -131,13 +131,14 @@ beforeEach(async function () {
           );
       });
 
-      it("devrait refuser si le scrutin n'est pas en Draft", async function () {z
+      it("devrait refuser si le scrutin n'est pas en Draft", async function () {
           await voting.write.openVoting({ account: minter.account });
           await assert.rejects(
             voting.write.openVoting({ account: minter.account })
           );
       });
     });
+
     // ============================================================
     // ÉTAPE 5 — Vote
     // ============================================================
@@ -183,14 +184,12 @@ beforeEach(async function () {
       it("devrait refuser si le votant a déjà voté", async function () {
         await voting.write.castVote([0n], { account: voter1.account });
         await assert.rejects(
-          voting.write.castVote([1n], { account: voter1.account })
-        );
+          voting.write.castVote([1n], { account: voter1.account }));
       });
 
       it("devrait refuser si le votant ne possède pas de NFT", async function () {
         await assert.rejects(
-          voting.write.castVote([0n], { account: voter3.account })
-        );
+          voting.write.castVote([0n], { account: voter3.account }));
       });
 
       it("devrait refuser si le scrutin n'est pas ouvert", async function () {
@@ -209,8 +208,131 @@ beforeEach(async function () {
 
       it("devrait refuser si l'index du choix est invalide", async function () {
         await assert.rejects(
-          voting.write.castVote([99n], { account: voter1.account })
+          voting.write.castVote([99n], { account: voter1.account }));
+      });
+    });
+
+    // ============================================================
+    // ÉTAPE 6 — Fermeture du scrutin
+    // ============================================================
+    // Objectif : passer le statut de Open à Closed
+    //
+    // Concepts :
+    //   Seul l'organisationAdministrator peut fermer le scrutin
+    //   Le scrutin doit être Open pour être fermé
+    //   Une fois fermé, plus personne ne peut voter
+    //   On émet un événement VotingClosed
+    // ============================================================
+    describe("Fermeture du scrutin", function () {
+      beforeEach(async function () {
+        await voting.write.openVoting({ account: minter.account });
+      });
+
+      it("devrait passer le statut de Open à Closed", async function () {
+        await voting.write.closeVoting({ account: minter.account });
+        const status = await voting.read.status();
+        assert.equal(status, 2); // 2 = Closed
+      });
+
+      it("devrait émettre un événement VotingClosed", async function () {
+        await voting.write.closeVoting({ account: minter.account });
+        const events = await voting.getEvents.VotingClosed();
+        assert.equal(events.length >= 1, true);
+      });
+
+      it("devrait refuser si l'appelant n'est pas l'admin", async function () {
+        await assert.rejects(
+          voting.write.closeVoting({ account: voter1.account })
+        );
+      });
+
+      it("devrait refuser si le scrutin n'est pas ouvert", async function () {
+        await voting.write.closeVoting({ account: minter.account });
+        await assert.rejects(
+          voting.write.closeVoting({ account: minter.account })
+        );
+      });
+
+      it("devrait empêcher de voter après la fermeture", async function () {
+        await votingNFT.write.safeMintBatch(
+          [[voter1.account.address]],
+          { account: minter.account }
+        );
+        await voting.write.closeVoting({ account: minter.account });
+        await assert.rejects(
+          voting.write.castVote([0n], { account: voter1.account })
         );
       });
     });
+
+    
+      // ============================================================
+      // ÉTAPE 7 — Dépouillement (Tally)
+      // ============================================================
+      // Objectif : déterminer le choix gagnant après la fermeture
+      //
+      // Concepts :
+      //   Seul l'organisationAdministrator peut dépouiller
+      //   Le scrutin doit être Closed pour être dépouillé
+      //   On parcourt votesPerChoice pour trouver l'index avec le plus de votes
+      //   winningChoiceIndex → stocké on-chain après le tally
+      //   On émet un événement VotingTallied avec l'index gagnant
+      // ============================================================
+      describe("Dépouillement", function () {
+        beforeEach(async function () {
+          // Mint pour voter1, voter2, voter3
+          await votingNFT.write.safeMintBatch(
+            [[voter1.account.address, voter2.account.address, voter3.account.address]],
+            { account: minter.account }
+          );
+          // Ouvrir le scrutin
+          await voting.write.openVoting({ account: minter.account });
+          // voter1 et voter3 votent pour le choix 1, voter2 vote pour le choix 0
+          await voting.write.castVote([1n], { account: voter1.account });
+          await voting.write.castVote([0n], { account: voter2.account });
+          await voting.write.castVote([1n], { account: voter3.account });
+          // Fermer le scrutin
+          await voting.write.closeVoting({ account: minter.account });
+        });
+
+        it("devrait passer le statut de Closed à Tallied", async function () {
+          await voting.write.tallyVotes({ account: minter.account });
+          const status = await voting.read.status();
+          assert.equal(status, 3); // 3 = Tallied
+        });
+
+        it("devrait déterminer le choix gagnant", async function () {
+          await voting.write.tallyVotes({ account: minter.account });
+          const winningChoiceIndex = await voting.read.winningChoiceIndex();
+          assert.equal(winningChoiceIndex, 1n); // "Piste cyclable" avec 2 votes
+        });
+
+        it("devrait émettre un événement VotingTallied", async function () {
+          await voting.write.tallyVotes({ account: minter.account });
+          const events = await voting.getEvents.VotingTallied();
+          assert.equal(events.length >= 1, true);
+        });
+
+        it("devrait refuser si l'appelant n'est pas l'admin", async function () {
+          await assert.rejects(
+            voting.write.tallyVotes({ account: voter1.account })
+          );
+        });
+
+        it("devrait refuser si le scrutin n'est pas fermé", async function () {
+          // Déployer un nouveau voting encore en Draft
+          const connection = await network.connect();
+          const { viem } = connection;
+          const votingDraft = await viem.deployContract("VerivoVoting", [
+            votingNFT.address,
+            minter.account.address,
+            "Autre scrutin",
+            ["Choix A"],
+          ]);
+          await assert.rejects(
+            votingDraft.write.tallyVotes({ account: minter.account })
+          );
+        });
+      });
+
   });
