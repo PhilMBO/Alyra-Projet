@@ -131,11 +131,86 @@ beforeEach(async function () {
           );
       });
 
-      it("devrait refuser si le scrutin n'est pas en Draft", async function () {
+      it("devrait refuser si le scrutin n'est pas en Draft", async function () {z
           await voting.write.openVoting({ account: minter.account });
           await assert.rejects(
             voting.write.openVoting({ account: minter.account })
           );
+      });
+    });
+    // ============================================================
+    // ÉTAPE 5 — Vote
+    // ============================================================
+    // Objectif : un détenteur de NFT peut voter pour un choix
+    //
+    // Concepts :
+    //   Le scrutin doit être Open pour voter
+    //   Le votant doit posséder un NFT (vérifié via hasVotingRight)
+    //   Un votant ne peut voter qu'une seule fois
+    //   mapping(address => bool) hasVoted → empêche le double vote
+    //   mapping(uint256 => uint256) votesPerChoice → compteur par choix
+    //   L'index du choix est passé en paramètre (0, 1, 2...)
+    // ============================================================
+    describe("Vote", function () {
+      beforeEach(async function () {
+        // Mint un NFT pour voter1 et voter2 via safeMintBatch
+        await votingNFT.write.safeMintBatch(
+          [[voter1.account.address, voter2.account.address]],
+          { account: minter.account }
+        );
+        // Ouvrir le scrutin
+        await voting.write.openVoting({ account: minter.account });
+      });
+
+      it("devrait permettre à un détenteur de NFT de voter", async function () {
+        await voting.write.castVote([0n], { account: voter1.account });
+        const hasVoted = await voting.read.hasVoted([voter1.account.address]);
+        assert.equal(hasVoted, true);
+      });
+
+      it("devrait incrémenter le compteur du choix voté", async function () {
+        await voting.write.castVote([0n], { account: voter1.account });
+        const votes = await voting.read.votesPerChoice([0n]);
+        assert.equal(votes, 1n);
+      });
+
+      it("devrait émettre un événement VoteCast", async function () {
+        await voting.write.castVote([1n], { account: voter1.account });
+        const events = await voting.getEvents.VoteCast();
+        assert.equal(events.length >= 1, true);
+      });
+
+      it("devrait refuser si le votant a déjà voté", async function () {
+        await voting.write.castVote([0n], { account: voter1.account });
+        await assert.rejects(
+          voting.write.castVote([1n], { account: voter1.account })
+        );
+      });
+
+      it("devrait refuser si le votant ne possède pas de NFT", async function () {
+        await assert.rejects(
+          voting.write.castVote([0n], { account: voter3.account })
+        );
+      });
+
+      it("devrait refuser si le scrutin n'est pas ouvert", async function () {
+        const connection = await network.connect();
+        const { viem } = connection;
+        const votingDraft = await viem.deployContract("VerivoVoting", [
+          votingNFT.address,
+          minter.account.address,
+          "Scrutin fermé",
+          ["Choix A"],
+        ]);
+        await assert.rejects(
+          votingDraft.write.castVote([0n], { account: voter1.account })
+        );
+      });
+
+      it("devrait refuser si l'index du choix est invalide", async function () {
+        await assert.rejects(
+          voting.write.castVote([99n], { account: voter1.account })
+        );
       });
     });
   });
