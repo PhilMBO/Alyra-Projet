@@ -24,6 +24,7 @@ describe("VerivoVotingNFT", function () {
     [owner, minter, voter1, voter2] = await viem.getWalletClients();
     votingNFT = await viem.deployContract("VerivoVotingNFT", [
       minter.account.address,
+       5n,  // maximumVoters
     ]);
   });
 
@@ -374,6 +375,77 @@ describe("VerivoVotingNFT", function () {
             account: minter.account,
           })
         );
+      });
+    });
+
+
+    // ============================================================
+    // ÉTAPE 9 — Plafond de votants (maximumVoters)
+    // ============================================================
+    // Objectif : limiter le nombre de NFT mintables
+    //
+    // Concepts :
+    //   maximumVoters → passé au constructor, fixe le plafond
+    //   Le mint (simple et batch) doit refuser si le plafond est atteint
+    //   _nextTokenId sert de compteur de NFT mintés (inclut les burn)
+    //   → on a besoin d'un compteur de NFT actifs (non-burn)
+    // ============================================================
+    describe("Plafond de votants", function () {
+      it("devrait stocker le nombre maximum de votants", async function () {
+        const maximumVoters = await votingNFT.read.maximumVoters();
+        assert.equal(maximumVoters, 5n);
+      });
+
+      it("devrait refuser le mint si le plafond est atteint", async function () {
+        // On a déployé avec maximumVoters = 5
+        // On mint 5 NFT (il faut 5 adresses distinctes)
+        const connection = await network.connect();
+        const { viem } = connection;
+        const wallets = await viem.getWalletClients();
+        for (let i = 0; i < 5; i++) {
+          await mintTo(wallets[i].account.address);
+        }
+        // Le 6e doit revert
+        await assert.rejects(
+          votingNFT.write.safeMint([wallets[5].account.address], {
+            account: minter.account,
+          }),
+          (error: any) => error.message.includes("Nombre maximum de votants atteint")
+        );
+      });
+
+      it("devrait refuser le mint batch si le plafond serait dépassé", async function () {
+        const connection = await network.connect();
+        const { viem } = connection;
+        const wallets = await viem.getWalletClients();
+        // Mint 4 individuellement
+        for (let i = 0; i < 4; i++) {
+          await mintTo(wallets[i].account.address);
+        }
+        // Batch de 2 → dépasserait le plafond de 5
+        await assert.rejects(
+          votingNFT.write.safeMintBatch(
+            [[wallets[4].account.address, wallets[5].account.address]],
+            { account: minter.account }
+          ),
+          (error: any) => error.message.includes("Nombre maximum de votants atteint")
+        );
+      });
+
+      it("devrait permettre de re-mint après un burn sans dépasser le plafond", async function () {
+        const connection = await network.connect();
+        const { viem } = connection;
+        const wallets = await viem.getWalletClients();
+        // Mint 5 NFT (plafond atteint)
+        for (let i = 0; i < 5; i++) {
+          await mintTo(wallets[i].account.address);
+        }
+        // Burn 1
+        await votingNFT.write.burn([0n], { account: minter.account });
+        // Re-mint → doit passer car on est redescendu à 4 actifs
+        await mintTo(wallets[5].account.address);
+        const hasRight = await votingNFT.read.hasVotingRight([wallets[5].account.address]);
+        assert.equal(hasRight, true);
       });
     });
 });
