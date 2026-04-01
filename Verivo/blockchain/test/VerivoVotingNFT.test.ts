@@ -8,9 +8,9 @@ describe("VerivoVotingNFT", function () {
   let minter: any;
   let voter1: any;
   let voter2: any;
-  // Helper pour mint un NFT rapidement
+  // Helper pour mint un NFT rapidement — passe par safeMintBatch avec un tableau d'une adresse
   async function mintTo(address: string) {
-    await votingNFT.write.safeMint([address], {
+    await votingNFT.write.safeMintBatch([[address]], {
       account: minter.account,
     });
   }
@@ -76,14 +76,15 @@ describe("VerivoVotingNFT", function () {
     // Objectif : vérifier que le MINTER peut créer un NFT de vote
     //
     // Concepts :
-    //   safeMint(address to) → crée un NFT pour l'adresse donnée
+    //   safeMintBatch([address]) → seul point d'entrée pour le mint
+    //   Pour un mint individuel → passer un tableau d'une seule adresse
     //   onlyRole(MINTER_ROLE) → seul le minter peut appeler
     //   balanceOf(address) → nombre de NFT possédés (hérité ERC721)
     //   ownerOf(tokenId) → propriétaire du NFT (hérité ERC721)
     // ============================================================
     describe("Mint", function () {
       it("devrait permettre au MINTER de mint un NFT pour un voter", async function () {
-        // write.safeMint → appelle la fonction en transaction
+        // safeMintBatch avec un tableau d'une adresse → mint individuel
         // account: minter.account → signe avec le wallet minter
         await mintTo(voter1.account.address);
         // balanceOf → voter1 possède maintenant 1 NFT
@@ -115,7 +116,7 @@ describe("VerivoVotingNFT", function () {
       it("devrait empêcher un non-MINTER de mint", async function () {
         // voter1 n'a pas MINTER_ROLE → la transaction doit revert
         await assert.rejects(
-          votingNFT.write.safeMint([voter1.account.address], {
+          votingNFT.write.safeMintBatch([[voter1.account.address]], {
             account: voter1.account,
           })
         );
@@ -126,7 +127,7 @@ describe("VerivoVotingNFT", function () {
         await mintTo(voter1.account.address);
         // Deuxième mint pour la même adresse → doit revert
         await assert.rejects(
-          votingNFT.write.safeMint([voter1.account.address], {
+          votingNFT.write.safeMintBatch([[voter1.account.address]], {
             account: minter.account,
           })
         );
@@ -407,7 +408,7 @@ describe("VerivoVotingNFT", function () {
         }
         // Le 6e doit revert
         await assert.rejects(
-          votingNFT.write.safeMint([wallets[5].account.address], {
+          votingNFT.write.safeMintBatch([[wallets[5].account.address]], {
             account: minter.account,
           }),
           (error: any) => error.message.includes("Nombre maximum de votants atteint")

@@ -51,12 +51,11 @@ contract VerivoVotingNFT is ERC721, AccessControl {
 
     /// @notice Mint un NFT de vote pour une adresse
     /// @param to Adresse qui recevra le NFT
-    /// @dev Vérifie que l'adresse n'a pas déjà un NFT (1 NFT = 1 vote)
-    ///      Vérifie que le plafond de votants n'est pas atteint
-    ///      _safeMint vérifie que le destinataire peut recevoir un ERC721
-    function safeMint(address to) external onlyRole(MINTER_ROLE) {
+    /// @dev internal → appelée uniquement par safeMintBatch, pas directement par l'extérieur
+    ///      Vérifie que l'adresse n'a pas déjà un NFT (1 NFT = 1 vote)
+    ///      _safeMint (ERC721) vérifie que le destinataire peut recevoir un ERC721
+    function _mintVotingNFT(address to) internal {
         require(balanceOf(to) == 0, "Adresse possede deja un NFT de vote");
-        require(_activeTokenCount < maximumVoters, "Nombre maximum de votants atteint");
         _safeMint(to, _nextTokenId);
         _activeTokenCount++;
         _nextTokenId++;
@@ -64,16 +63,15 @@ contract VerivoVotingNFT is ERC721, AccessControl {
 
     /// @notice Mint un NFT de vote pour chaque adresse du tableau
     /// @param recipients Liste des adresses qui recevront un NFT
-    /// @dev Vérifie la taille du batch, le plafond global, et l'unicité par adresse
+    /// @dev Seul point d'entrée public pour le mint
+    ///      Vérifie la taille du batch, le plafond global, puis délègue à _mintVotingNFT
     ///      Atomique : si une adresse échoue, tout le batch revert
+    ///      Pour un mint individuel → passer un tableau d'une seule adresse
     function safeMintBatch(address[] calldata recipients) external onlyRole(MINTER_ROLE) {
         require(recipients.length <= MAX_BATCH_SIZE, "Batch trop grand");
         require(_activeTokenCount + recipients.length <= maximumVoters, "Nombre maximum de votants atteint");
         for (uint256 i = 0; i < recipients.length; i++) {
-            require(balanceOf(recipients[i]) == 0, "Adresse possede deja un NFT de vote");
-            _safeMint(recipients[i], _nextTokenId);
-            _nextTokenId++;
-            _activeTokenCount++;
+            _mintVotingNFT(recipients[i]);
         }
     }
 
