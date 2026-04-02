@@ -1,4 +1,4 @@
-  import { describe, it, beforeEach } from "node:test";
+ import { describe, it, beforeEach } from "node:test";
   import assert from "node:assert/strict";
   import { network } from "hardhat";
 
@@ -8,10 +8,11 @@
     let owner: any;
     let organisationAdministrator: any;
     let voter1: any;
+    let viem: any;
 
     beforeEach(async function () {
       const connection = await network.connect();
-      const { viem } = connection;
+      viem = connection.viem;
       [owner, organisationAdministrator, voter1] = await viem.getWalletClients();
 
       votingNFT = await viem.deployContract("VerivoVotingNFT", [
@@ -127,11 +128,6 @@
           ["Rénovation du parc", "Piste cyclable"],
         ]);
         const votings = await factory.read.getVotings();
-        const connection = await network.connect();
-        const { viem } = connection;
-        const publicClient = await viem.getPublicClient();
-
-        // Lire le titre du scrutin déployé via son ABI
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
         const title = await voting.read.title();
         assert.equal(title, "Budget participatif 2026");
@@ -151,8 +147,6 @@
           ["Rénovation du parc", "Piste cyclable"],
         ]);
         const votings = await factory.read.getVotings();
-        const connection = await network.connect();
-        const { viem } = connection;
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
 
         await voting.write.openVoting({ account: organisationAdministrator.account });
@@ -160,4 +154,5 @@
         assert.equal(status, 1); // Open
       });
     });
+
   });
