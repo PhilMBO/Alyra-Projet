@@ -266,73 +266,205 @@ beforeEach(async function () {
     });
 
     
-      // ============================================================
-      // ÉTAPE 7 — Dépouillement (Tally)
-      // ============================================================
-      // Objectif : déterminer le choix gagnant après la fermeture
-      //
-      // Concepts :
-      //   Seul l'organisationAdministrator peut dépouiller
-      //   Le scrutin doit être Closed pour être dépouillé
-      //   On parcourt votesPerChoice pour trouver l'index avec le plus de votes
-      //   winningChoiceIndex → stocké on-chain après le tally
-      //   On émet un événement VotingTallied avec l'index gagnant
-      // ============================================================
-      describe("Dépouillement", function () {
-        beforeEach(async function () {
-          // Mint pour voter1, voter2, voter3
-          await votingNFT.write.safeMintBatch(
-            [[voter1.account.address, voter2.account.address, voter3.account.address]],
-            { account: minter.account }
-          );
-          // Ouvrir le scrutin
-          await voting.write.openVoting({ account: minter.account });
-          // voter1 et voter3 votent pour le choix 1, voter2 vote pour le choix 0
-          await voting.write.castVote([1n], { account: voter1.account });
-          await voting.write.castVote([0n], { account: voter2.account });
-          await voting.write.castVote([1n], { account: voter3.account });
-          // Fermer le scrutin
-          await voting.write.closeVoting({ account: minter.account });
-        });
-
-        it("devrait passer le statut de Closed à Tallied", async function () {
-          await voting.write.tallyVotes({ account: minter.account });
-          const status = await voting.read.status();
-          assert.equal(status, 3); // 3 = Tallied
-        });
-
-        it("devrait déterminer le choix gagnant", async function () {
-          await voting.write.tallyVotes({ account: minter.account });
-          const winningChoiceIndex = await voting.read.winningChoiceIndex();
-          assert.equal(winningChoiceIndex, 1n); // "Piste cyclable" avec 2 votes
-        });
-
-        it("devrait émettre un événement VotingTallied", async function () {
-          await voting.write.tallyVotes({ account: minter.account });
-          const events = await voting.getEvents.VotingTallied();
-          assert.equal(events.length >= 1, true);
-        });
-
-        it("devrait refuser si l'appelant n'est pas l'admin", async function () {
-          await assert.rejects(
-            voting.write.tallyVotes({ account: voter1.account })
-          );
-        });
-
-        it("devrait refuser si le scrutin n'est pas fermé", async function () {
-          // Déployer un nouveau voting encore en Draft
-          const connection = await network.connect();
-          const { viem } = connection;
-          const votingDraft = await viem.deployContract("VerivoVoting", [
-            votingNFT.address,
-            minter.account.address,
-            "Autre scrutin",
-            ["Choix A"],
-          ]);
-          await assert.rejects(
-            votingDraft.write.tallyVotes({ account: minter.account })
-          );
-        });
+    // ============================================================
+    // ÉTAPE 7 — Dépouillement (Tally)
+    // ============================================================
+    // Objectif : déterminer le choix gagnant après la fermeture
+    //
+    // Concepts :
+    //   Seul l'organisationAdministrator peut dépouiller
+    //   Le scrutin doit être Closed pour être dépouillé
+    //   On parcourt votesPerChoice pour trouver l'index avec le plus de votes
+    //   winningChoiceIndex → stocké on-chain après le tally
+    //   On émet un événement VotingTallied avec l'index gagnant
+    // ============================================================
+    describe("Dépouillement", function () {
+      beforeEach(async function () {
+        // Mint pour voter1, voter2, voter3
+        await votingNFT.write.safeMintBatch(
+          [[voter1.account.address, voter2.account.address, voter3.account.address]],
+          { account: minter.account }
+        );
+        // Ouvrir le scrutin
+        await voting.write.openVoting({ account: minter.account });
+        // voter1 et voter3 votent pour le choix 1, voter2 vote pour le choix 0
+        await voting.write.castVote([1n], { account: voter1.account });
+        await voting.write.castVote([0n], { account: voter2.account });
+        await voting.write.castVote([1n], { account: voter3.account });
+        // Fermer le scrutin
+        await voting.write.closeVoting({ account: minter.account });
       });
 
+      it("devrait passer le statut de Closed à Tallied", async function () {
+        await voting.write.tallyVotes({ account: minter.account });
+        const status = await voting.read.status();
+        assert.equal(status, 3); // 3 = Tallied
+      });
+
+      it("devrait déterminer le choix gagnant", async function () {
+        await voting.write.tallyVotes({ account: minter.account });
+        const winningChoiceIndex = await voting.read.winningChoiceIndex();
+        assert.equal(winningChoiceIndex, 1n); // "Piste cyclable" avec 2 votes
+      });
+
+      it("devrait émettre un événement VotingTallied", async function () {
+        await voting.write.tallyVotes({ account: minter.account });
+        const events = await voting.getEvents.VotingTallied();
+        assert.equal(events.length >= 1, true);
+      });
+
+      it("devrait refuser si l'appelant n'est pas l'admin", async function () {
+        await assert.rejects(
+          voting.write.tallyVotes({ account: voter1.account })
+        );
+      });
+
+      it("devrait refuser si le scrutin n'est pas fermé", async function () {
+        // Déployer un nouveau voting encore en Draft
+        const connection = await network.connect();
+        const { viem } = connection;
+        const votingDraft = await viem.deployContract("VerivoVoting", [
+          votingNFT.address,
+          minter.account.address,
+          "Autre scrutin",
+          ["Choix A"],
+        ]);
+        await assert.rejects(
+          votingDraft.write.tallyVotes({account: minter.account })
+        );
+      });
+    });
+
+    // ============================================================
+    // ÉTAPE 8 — Consultation des résultats
+    // ============================================================
+    // Objectif : lire les résultats du scrutin après le dépouillement
+    //
+    // Concepts :
+    //   getWinningChoice() → retourne le nom du choix gagnant (string)
+    //   getResults() → retourne le nombre de votes pour chaque choix
+    //   Ces fonctions ne sont lisibles qu'après le tally (status == Tallied)
+    //   view functions → lecture seule, pas de gas
+    // ============================================================
+    describe("Consultation des résultats", function () {
+      beforeEach(async function () {
+        await votingNFT.write.safeMintBatch(
+          [[voter1.account.address, voter2.account.address, voter3.account.address]],
+          { account: minter.account }
+        );
+        await voting.write.openVoting({ account: minter.account });
+        await voting.write.castVote([1n], { account: voter1.account });
+        await voting.write.castVote([0n], { account: voter2.account });
+        await voting.write.castVote([1n], { account: voter3.account });
+        await voting.write.closeVoting({ account: minter.account });
+        await voting.write.tallyVotes({ account: minter.account });
+      });
+
+      it("devrait retourner le nom du choix gagnant", async function () {
+        const winningChoice = await voting.read.getWinningChoice();
+        assert.equal(winningChoice, "Piste cyclable");
+      });
+
+      it("devrait retourner les scores de tous les choix", async function () {
+        const results = await voting.read.getResults();
+        assert.equal(results.length, 2);
+        assert.equal(results[0], 1n); // "Rénovation du parc" → 1 vote
+        assert.equal(results[1], 2n); // "Piste cyclable" → 2 votes
+      });
+
+      it("devrait refuser getWinningChoice si le scrutin n'est pas dépouillé", async function () {
+        const connection = await network.connect();
+        const { viem } = connection;
+        const votingDraft = await viem.deployContract("VerivoVoting", [
+          votingNFT.address,
+          minter.account.address,
+          "Autre scrutin",
+          ["Choix A"],
+        ]);
+        await assert.rejects(
+          votingDraft.read.getWinningChoice()
+        );
+      });
+
+      it("devrait refuser getResults si le scrutin n'est pas dépouillé", async function () {
+        const connection = await network.connect();
+        const { viem } = connection;
+        const votingDraft = await viem.deployContract("VerivoVoting", [
+          votingNFT.address,
+          minter.account.address,
+          "Autre scrutin",
+          ["Choix A"],
+        ]);
+        await assert.rejects(
+          votingDraft.read.getResults()
+        );
+      });
+    });
+    // ============================================================
+    // ÉTAPE 9 — Edge cases du cycle de vie
+    // ============================================================
+    // Objectif : vérifier que les transitions d'état interdites revert
+    //
+    // Concepts :
+    //   Le cycle est linéaire : Draft → Open → Closed → Tallied
+    //   On ne peut pas sauter d'étape ni revenir en arrière
+    //   Un scrutin sans votes peut quand même être dépouillé
+    //   Le owner (Verivo) n'a pas les droits de l'admin organisation
+    // ============================================================
+    describe("Edge cases", function () {
+      it("devrait refuser de fermer un scrutin en Draft", async function () {
+        await assert.rejects(
+          voting.write.closeVoting({ account: minter.account })
+        );
+      });
+
+      it("devrait refuser de dépouiller un scrutin en Open", async function () {
+        await voting.write.openVoting({ account: minter.account });
+        await assert.rejects(
+          voting.write.tallyVotes({ account: minter.account })
+        );
+      });
+
+      it("devrait refuser de rouvrir un scrutin fermé", async function () {
+        await voting.write.openVoting({ account: minter.account });
+        await voting.write.closeVoting({ account: minter.account });
+        await assert.rejects(
+          voting.write.openVoting({ account: minter.account })
+        );
+      });
+
+      it("devrait refuser de rouvrir un scrutin dépouillé", async function () {
+        await voting.write.openVoting({ account: minter.account });
+        await voting.write.closeVoting({ account: minter.account });
+        await voting.write.tallyVotes({ account: minter.account });
+        await assert.rejects(
+          voting.write.openVoting({ account: minter.account })
+        );
+      });
+
+      it("devrait permettre de dépouiller un scrutin sans votes", async function () {
+        await voting.write.openVoting({ account: minter.account });
+        await voting.write.closeVoting({ account: minter.account });
+        await voting.write.tallyVotes({ account: minter.account });
+        const status = await voting.read.status();
+        assert.equal(status, 3); // Tallied
+        const winningChoiceIndex = await voting.read.winningChoiceIndex();
+        assert.equal(winningChoiceIndex, 0n); // Premier choix par défaut (0 votes partout)
+      });
+
+      it("devrait refuser au owner (Verivo) d'ouvrir le scrutin", async function () {
+        await assert.rejects(
+          voting.write.openVoting({ account: owner.account })
+        );
+      });
+
+      it("devrait refuser de dépouiller deux fois", async function () {
+        await voting.write.openVoting({ account: minter.account });
+        await voting.write.closeVoting({ account: minter.account });
+        await voting.write.tallyVotes({ account: minter.account });
+        await assert.rejects(
+          voting.write.tallyVotes({ account: minter.account })
+        );
+      });
+    });
   });

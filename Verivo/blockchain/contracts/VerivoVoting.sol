@@ -57,6 +57,15 @@ contract VerivoVoting is Ownable {
     /// @dev Le frontend écoute cet event pour bloquer l'interface de vote
     event VotingClosed();
 
+    /// @notice Index du choix gagnant après le dépouillement
+    /// @dev N'a de valeur significative qu'après le tally (status == Tallied)
+    uint256 public winningChoiceIndex;
+    
+    /// @notice Événement émis lorsque le scrutin est dépouillé
+    /// @param winningChoiceIndex Index du choix gagnant
+    event VotingTallied(uint256 winningChoiceIndex);
+
+
     /// @notice Vérifie que l'appelant est l'administrateur de l'organisation
     /// @dev Modifier custom réutilisable sur openVoting, closeVoting, tally...
     ///      Le "_;" indique où le corps de la fonction décorée s'exécute
@@ -122,11 +131,50 @@ contract VerivoVoting is Ownable {
         status = Status.Closed;
         emit VotingClosed();
     }
+    /// @notice Dépouille le scrutin — détermine le choix gagnant
+    /// @dev Seul l'organisationAdministrator peut appeler
+    ///      Le scrutin doit être Closed sinon revert
+    ///      Parcourt votesPerChoice pour trouver l'index avec le plus de votes
+    ///      En cas d'égalité, le premier choix avec le score max l'emporte
+    ///      Émet VotingTallied avec l'index gagnant
+    function tallyVotes() external onlyOrganisationAdministrator {
+        require(status == Status.Closed, "Le scrutin n'est pas ferme");
+        uint256 winningVoteCount = 0;
+        for (uint256 i = 0; i < choices.length; i++) {
+            if (votesPerChoice[i] > winningVoteCount) {
+                winningVoteCount = votesPerChoice[i];
+                winningChoiceIndex = i;
+            }
+        }
+        status = Status.Tallied;
+        emit VotingTallied(winningChoiceIndex);
+    }
     /// @notice Retourne la liste des choix du scrutin
     /// @return La liste des choix sous forme de tableau de strings en mémoire
     /// @dev external view → lecture seule, pas de gas en appel externe
     ///      Nécessaire car Solidity ne génère pas de getter pour les tableaux dynamiques
     function getChoices() external view returns (string[] memory) {
         return choices;
+    }
+    /// @notice Retourne le nom du choix gagnant
+    /// @return Le string du choix ayant reçu le plus de votes
+    /// @dev Accessible uniquement après le dépouillement (status == Tallied)
+    ///      Utilise winningChoiceIndex pour indexer le tableau choices
+    function getWinningChoice() external view returns (string memory) {
+        require(status == Status.Tallied, "Le scrutin n'est pas encore depouille");
+        return choices[winningChoiceIndex];
+    }
+
+    /// @notice Retourne le nombre de votes pour chaque choix
+    /// @return Un tableau avec le score de chaque choix (même ordre que choices)
+    /// @dev Accessible uniquement après le dépouillement (status == Tallied)
+    ///      Construit un tableau en mémoire à partir du mapping votesPerChoice
+    function getResults() external view returns (uint256[] memory) {
+        require(status == Status.Tallied, "Le scrutin n'est pas encore depouille");
+        uint256[] memory results = new uint256[](choices.length);
+        for (uint256 i = 0; i < choices.length; i++) {
+            results[i] = votesPerChoice[i];
+        }
+        return results;
     }
 }
