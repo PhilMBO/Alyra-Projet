@@ -5,10 +5,11 @@ import "./VerivoVotingNFT.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title VerivoVoting — Un contrat par scrutin
-/// @notice Gère un vote utilisant les NFT soul-bound
+/// @notice Gère un vote pondéré avec délai automatique utilisant les NFT soul-bound
 /// @dev Hérite de Ownable (le déployeur Verivo est owner)
 ///      1 contrat = 1 scrutin, déployé par le backend pour chaque vote
 ///      L'organisationAdministrator gère le cycle de vie (open, close, tally)
+///      Le délai automatique permet à n'importe qui de fermer après expiration
 contract VerivoVoting is Ownable {
 
     /// @notice Les états possibles du scrutin
@@ -18,6 +19,7 @@ contract VerivoVoting is Ownable {
 
     /// @notice Référence vers le contrat NFT soul-bound
     /// @dev Permet de vérifier qui possède un droit de vote via hasVotingRight()
+    ///      et de récupérer le poids du vote via getVotingWeight()
     VerivoVotingNFT public votingNFT;
 
     /// @notice Adresse de l'administrateur de l'organisation
@@ -36,6 +38,17 @@ contract VerivoVoting is Ownable {
     /// @dev Initialisé à Draft au déploiement
     Status public status;
 
+    /// @notice Durée du scrutin en secondes (fixée au déploiement)
+    /// @dev Ex: 7 heures = 7  * 60 * 60 = 25200
+    ///      Passée au constructor, ne peut plus être modifiée
+    uint256 public votingDuration;
+
+    /// @notice Timestamp de l'ouverture du scrutin
+    /// @dev Enregistré par openVoting() via block.timestamp
+    ///      block.timestamp = horodatage du bloc courant (en secondes Unix)
+    ///      Vaut 0 tant que le scrutin n'est pas ouvert
+    uint256 public votingStartTime;
+
     /// @notice Événement émis lorsque le scrutin est ouvert
     /// @dev Le frontend écoute cet event pour mettre à jour l'interface
     event VotingOpened();
@@ -46,13 +59,14 @@ contract VerivoVoting is Ownable {
 
     /// @notice Nombre de votes reçus par chaque choix
     /// @dev mapping(index du choix => nombre de votes)
+    ///      Les votes sont pondérés : un vote de poids 3 ajoute 3 au compteur
     mapping(uint256 => uint256) public votesPerChoice;
 
     /// @notice Événement émis lorsqu'un vote est enregistré
     /// @param voter Adresse du votant
     /// @param choiceIndex Index du choix voté
     event VoteCast(address indexed voter, uint256 choiceIndex);
-    
+
     /// @notice Événement émis lorsque le scrutin est fermé
     /// @dev Le frontend écoute cet event pour bloquer l'interface de vote
     event VotingClosed();
@@ -60,14 +74,14 @@ contract VerivoVoting is Ownable {
     /// @notice Index du choix gagnant après le dépouillement
     /// @dev N'a de valeur significative qu'après le tally (status == Tallied)
     uint256 public winningChoiceIndex;
-    
+
     /// @notice Événement émis lorsque le scrutin est dépouillé
     /// @param winningChoiceIndex Index du choix gagnant
     event VotingTallied(uint256 winningChoiceIndex);
 
 
     /// @notice Vérifie que l'appelant est l'administrateur de l'organisation
-    /// @dev Modifier custom réutilisable sur openVoting, closeVoting, tally...
+    /// @dev Modifier custom réutilisable sur openVoting, tally...
     ///      Le "_;" indique où le corps de la fonction décorée s'exécute
     modifier onlyOrganisationAdministrator() {
         require(msg.sender == organisationAdministrator, "Seul l'administrateur de l'organisation peut effectuer cette action");
@@ -79,38 +93,48 @@ contract VerivoVoting is Ownable {
     /// @param _organisationAdministrator Adresse de l'admin qui gèrera ce scrutin
     /// @param _title Titre du scrutin
     /// @param _choices Liste des choix proposés aux votants
+    /// @param _votingDuration Durée du scrutin en secondes (ex: 25200 = 7 heures)
     /// @dev Ownable(msg.sender) → le déployeur (Verivo) devient owner
     ///      Les paramètres sont fixés au constructor → immutables après déploiement
+    ///      La durée doit être > 0 sinon le scrutin serait immédiatement fermable
     constructor(
         address _votingNFT,
         address _organisationAdministrator,
         string memory _title,
-        string[] memory _choices
+        string[] memory _choices,
+        uint256 _votingDuration
     ) Ownable(msg.sender) {
         require(_choices.length >= 1, "Minimum 1 choix requis");
+        require(_votingDuration > 0, "La duree doit etre superieure a 0");
         votingNFT = VerivoVotingNFT(_votingNFT);
         organisationAdministrator = _organisationAdministrator;
         title = _title;
         choices = _choices;
+        votingDuration = _votingDuration;
         status = Status.Draft;
     }
 
     /// @notice Ouvre le scrutin — passe le statut de Draft à Open
     /// @dev Seul l'organisationAdministrator peut appeler (modifier)
     ///      Le scrutin doit être en Draft sinon revert
+    ///      Enregistre block.timestamp → sert de référence pour le délai
     ///      Émet VotingOpened pour notifier les listeners (frontend, indexeur)
     function openVoting() external onlyOrganisationAdministrator {
         require(status == Status.Draft, "Le scrutin n'est pas en brouillon");
         status = Status.Open;
+        votingStartTime = block.timestamp;
         emit VotingOpened();
     }
-    /// @notice Enregistre un vote pour un choix
+
+    /// @notice Enregistre un vote pondéré pour un choix
     /// @param _choiceIndex Index du choix dans le tableau choices (0, 1, 2...)
     /// @dev Vérifie dans l'ordre :
     ///      1. Le scrutin est ouvert (status == Open)
     ///      2. Le votant possède un NFT (via hasVotingRight sur le contrat NFT)
     ///      3. Le votant n'a pas déjà voté (hasVoted == false)
     ///      4. L'index du choix est valide (< choices.length)
+    ///      Le vote compte pour le poids du NFT du votant
+    ///      Ex: NFT de poids 3 → votesPerChoice[choix] += 3
     ///      Émet VoteCast pour notifier les listeners
     function castVote(uint256 _choiceIndex) external {
         require(status == Status.Open, "Le scrutin n'est pas ouvert");
@@ -118,19 +142,29 @@ contract VerivoVoting is Ownable {
         require(!hasVoted[msg.sender], "Vous avez deja vote");
         require(_choiceIndex < choices.length, "Choix invalide");
         hasVoted[msg.sender] = true;
-        votesPerChoice[_choiceIndex]++;
+        uint256 weight = votingNFT.getVotingWeight(msg.sender);
+        votesPerChoice[_choiceIndex] += weight;
         emit VoteCast(msg.sender, _choiceIndex);
     }
-    /// @notice Ferme le scrutin — passe le statut de Open à Closed
-    /// @dev Seul l'organisationAdministrator peut appeler (modifier)
-    ///      Le scrutin doit être Open sinon revert
-    ///      Après fermeture, castVote revert car status != Open
+
+    /// @notice Ferme le scrutin — soit par l'admin, soit par n'importe qui après le délai
+    /// @dev Deux cas possibles :
+    ///      1. L'admin org ferme quand il veut (même avant le délai)
+    ///      2. N'importe qui peut fermer si le délai est expiré
+    ///      → garantit que le scrutin ne reste pas ouvert indéfiniment
+    ///      isAdmin → true si msg.sender est l'organisationAdministrator
+    ///      isExpired → true si block.timestamp >= votingStartTime + votingDuration
+    ///      Le require exige que l'un des deux soit vrai (|| = OU logique)
     ///      Émet VotingClosed pour notifier les listeners
-    function closeVoting() external onlyOrganisationAdministrator {
+    function closeVoting() external {
         require(status == Status.Open, "Le scrutin n'est pas ouvert");
+        bool isAdmin = msg.sender == organisationAdministrator;
+        bool isExpired = block.timestamp >= votingStartTime + votingDuration;
+        require(isAdmin || isExpired, "Seul l'admin peut fermer avant la fin du delai");
         status = Status.Closed;
         emit VotingClosed();
     }
+
     /// @notice Dépouille le scrutin — détermine le choix gagnant
     /// @dev Seul l'organisationAdministrator peut appeler
     ///      Le scrutin doit être Closed sinon revert
@@ -149,6 +183,7 @@ contract VerivoVoting is Ownable {
         status = Status.Tallied;
         emit VotingTallied(winningChoiceIndex);
     }
+
     /// @notice Retourne la liste des choix du scrutin
     /// @return La liste des choix sous forme de tableau de strings en mémoire
     /// @dev external view → lecture seule, pas de gas en appel externe
@@ -156,6 +191,7 @@ contract VerivoVoting is Ownable {
     function getChoices() external view returns (string[] memory) {
         return choices;
     }
+
     /// @notice Retourne le nom du choix gagnant
     /// @return Le string du choix ayant reçu le plus de votes
     /// @dev Accessible uniquement après le dépouillement (status == Tallied)
@@ -168,6 +204,7 @@ contract VerivoVoting is Ownable {
     /// @notice Retourne le nombre de votes pour chaque choix
     /// @return Un tableau avec le score de chaque choix (même ordre que choices)
     /// @dev Accessible uniquement après le dépouillement (status == Tallied)
+    ///      Les scores reflètent les poids : un vote de poids 3 = 3 dans le tableau
     ///      Construit un tableau en mémoire à partir du mapping votesPerChoice
     function getResults() external view returns (uint256[] memory) {
         require(status == Status.Tallied, "Le scrutin n'est pas encore depouille");

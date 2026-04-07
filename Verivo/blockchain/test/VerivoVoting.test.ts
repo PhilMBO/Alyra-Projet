@@ -72,7 +72,7 @@ describe("VerivoVoting", function () {
       minter.account.address,
       "Budget participatif 2026",
       ["Rénovation du parc", "Piste cyclable"],
-      604800n,
+      25200n,
     ]);
   });
 
@@ -366,7 +366,7 @@ describe("VerivoVoting", function () {
     it("devrait refuser si le scrutin n'est pas fermé", async function () {
       const votingDraft = await deployFreshVoting("Autre scrutin", ["Choix A"]);
       await assert.rejects(
-        votingDraft.write.tallyVotes({ account: minter.account })
+        votingDraft.write.tallyVotes({account: minter.account })
       );
     });
   });
@@ -562,7 +562,7 @@ describe("VerivoVoting", function () {
     it("devrait stocker la durée du scrutin", async function () {
       // votingDuration est fixé au constructor → 25200 = 7 heures
       const duration = await voting.read.votingDuration();
-      assert.equal(duration, 25200);
+      assert.equal(duration, 25200n);
     });
 
     it("devrait enregistrer le timestamp à l'ouverture", async function () {
@@ -590,28 +590,25 @@ describe("VerivoVoting", function () {
       );
     });
 
-    it("devrait permettre à n'importe qui de fermer après le délai", async function () {
+  it("devrait permettre à n'importe qui de fermer après le délai", async function () {
       await voting.write.openVoting({ account: minter.account });
-
-      // Avance le temps de 7 heures + 1 seconde dans la blockchain de test
-      // evm_increaseTime → ajoute N secondes à l'horloge
-      // evm_mine → mine un bloc pour que block.timestamp soit mis à jour
+      // networkHelpers.time.increase → avance le temps ET mine un bloc
+      // time.duration.hours(7) → 25200 secondes
+      // +1 → juste après l'expiration
       const connection = await network.connect();
-      await connection.provider.request({
-        method: "evm_increaseTime",
-        params: [25201], // 7 heures + 1 seconde
-      });
-      await connection.provider.request({
-        method: "evm_mine",
-        params: [],
-      });
+      const { networkHelpers } = connection;
+      await networkHelpers.time.increase(networkHelpers.time.duration.days(7) + 1);
 
-      // voter1 (pas admin) peut maintenant fermer → le délai est expiré
-      // La condition isExpired est true → le require passe
-      await voting.write.closeVoting({ account: voter1.account });
+      // gas: 200000n → bypasse l'estimation automatique de gas
+      // L'estimation simule la transaction avec un timestamp décalé (bug Hardhat v3)
+      // En fournissant le gas manuellement, on saute cette étape
+      await voting.write.closeVoting({
+          account: voter1.account,
+          gas: 200000n,
+      });
       const status = await voting.read.status();
       assert.equal(status, 2); // Closed
-    });
+  });
 
     it("devrait refuser une durée de 0 au déploiement", async function () {
       // Une durée de 0 n'a pas de sens → le scrutin serait immédiatement fermable

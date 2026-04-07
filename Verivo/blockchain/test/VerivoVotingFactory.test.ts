@@ -61,6 +61,7 @@
           organisationAdministrator.account.address,
           "Budget participatif 2026",
           ["Rénovation du parc", "Piste cyclable"],
+          25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         assert.equal(votings.length, 1);
@@ -72,6 +73,7 @@
           organisationAdministrator.account.address,
           "Budget participatif 2026",
           ["Rénovation du parc", "Piste cyclable"],
+          25200n, // 7 heures en secondes
         ]);
         const events = await factory.getEvents.VotingCreated();
         assert.equal(events.length >= 1, true);
@@ -83,12 +85,14 @@
           organisationAdministrator.account.address,
           "Scrutin 1",
           ["Choix A", "Choix B"],
+          25200n, // 7 heures en secondes
         ]);
         await factory.write.createVoting([
           votingNFT.address,
           organisationAdministrator.account.address,
           "Scrutin 2",
           ["Choix C", "Choix D"],
+          25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         assert.equal(votings.length, 2);
@@ -102,6 +106,7 @@
               organisationAdministrator.account.address,
               "Budget participatif 2026",
               ["Rénovation du parc", "Piste cyclable"],
+               25200n, // 7 heures en secondes
             ],
             { account: voter1.account }
           )
@@ -126,6 +131,7 @@
           organisationAdministrator.account.address,
           "Budget participatif 2026",
           ["Rénovation du parc", "Piste cyclable"],
+           25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
@@ -145,6 +151,7 @@
           organisationAdministrator.account.address,
           "Budget participatif 2026",
           ["Rénovation du parc", "Piste cyclable"],
+          25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
@@ -182,6 +189,7 @@
             organisationAdministrator.account.address,
             "Scrutin sans choix",
             [],  // tableau vide → revert
+             25200n, // 7 heures en secondes
           ])
         );
       });
@@ -193,6 +201,7 @@
           organisationAdministrator.account.address,
           "Scrutin à choix unique",
           ["Seul choix"],
+           25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         assert.equal(votings.length, 1);
@@ -218,6 +227,7 @@
           organisationAdministrator.account.address,
           "Scrutin ownership",
           ["Choix A", "Choix B"],
+           25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
@@ -237,6 +247,7 @@
           organisationAdministrator.account.address,
           "Scrutin ownership 2",
           ["Choix A"],
+           25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
@@ -271,6 +282,7 @@
           organisationAdministrator.account.address,
           "Budget participatif 2026",
           ["Rénovation du parc", "Piste cyclable"],
+           25200n, // 7 heures en secondes
         ]);
         const votings = await factory.read.getVotings();
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
