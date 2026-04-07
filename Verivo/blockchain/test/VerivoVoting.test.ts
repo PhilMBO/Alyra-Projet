@@ -15,7 +15,8 @@ describe("VerivoVoting", function () {
   // Factorisent les opérations répétitives pour garder les tests lisibles
 
   /// Déploie un nouveau contrat VerivoVoting avec des paramètres par défaut
-  async function deployFreshVoting(title: string, choices: string[]) {
+  /// duration → durée du scrutin en secondes (défaut : 7 heures = 25200s)
+  async function deployFreshVoting(title: string, choices: string[], duration: bigint = 25200n) {
     const connection = await network.connect();
     const { viem } = connection;
     return await viem.deployContract("VerivoVoting", [
@@ -23,20 +24,28 @@ describe("VerivoVoting", function () {
       minter.account.address,
       title,
       choices,
+      duration,
     ]);
   }
 
-  /// Mint des NFT pour une liste d'adresses via safeMintBatch
-  async function mintVotingRights(addresses: string[]) {
-    await votingNFT.write.safeMintBatch([addresses], { account: minter.account });
+  /// Mint des NFT pour une liste de VoterConfig via safeMintBatch
+  /// VoterConfig = { recipient: address, weight: uint256 }
+  /// → les données adresse/poids sont toujours liées dans un seul objet
+  async function mintVotingRights(voters: { recipient: string; weight: bigint }[]) {
+    await votingNFT.write.safeMintBatch([voters], { account: minter.account });
   }
 
   /// Exécute le cycle complet : mint → open → votes → close → tally
+  /// Chaque votant porte son poids (weight) et son choix (choiceIndex)
+  /// weight est optionnel, défaut = 1n (vote simple)
   async function runFullVotingCycle(
-    voters: { account: any; choiceIndex: bigint }[]
+    voters: { account: any; choiceIndex: bigint; weight?: bigint }[]
   ) {
-    const addresses = voters.map((v) => v.account.address);
-    await mintVotingRights(addresses);
+    const voterConfigs = voters.map((v) => ({
+      recipient: v.account.address,
+      weight: v.weight || 1n,
+    }));
+    await mintVotingRights(voterConfigs);
     await voting.write.openVoting({ account: minter.account });
     for (const v of voters) {
       await voting.write.castVote([v.choiceIndex], { account: v.account });
@@ -56,11 +65,14 @@ describe("VerivoVoting", function () {
       5n,
     ]);
 
+    // Le constructor prend une durée en secondes
+    // 25200n = 7 jours (7 * 60 * 60)
     voting = await viem.deployContract("VerivoVoting", [
       votingNFT.address,
       minter.account.address,
       "Budget participatif 2026",
       ["Rénovation du parc", "Piste cyclable"],
+      604800n,
     ]);
   });
 
@@ -151,6 +163,7 @@ describe("VerivoVoting", function () {
   //   Le scrutin doit être en Draft pour être ouvert
   //   On émet un événement pour notifier le frontend
   //   modifier onlyOrganisationAdministrator → contrôle d'accès custom
+  //   block.timestamp est enregistré → sert de référence pour le délai
   // ============================================================
   describe("Ouverture du scrutin", function () {
     it("devrait passer le statut de Draft à Open", async function () {
@@ -194,7 +207,10 @@ describe("VerivoVoting", function () {
   // ============================================================
   describe("Vote", function () {
     beforeEach(async function () {
-      await mintVotingRights([voter1.account.address, voter2.account.address]);
+      await mintVotingRights([
+        { recipient: voter1.account.address, weight: 1n },
+        { recipient: voter2.account.address, weight: 1n },
+      ]);
       await voting.write.openVoting({ account: minter.account });
     });
 
@@ -249,7 +265,7 @@ describe("VerivoVoting", function () {
   // Objectif : passer le statut de Open à Closed
   //
   // Concepts :
-  //   Seul l'organisationAdministrator peut fermer le scrutin
+  //   Seul l'organisationAdministrator peut fermer le scrutin (avant le délai)
   //   Le scrutin doit être Open pour être fermé
   //   Une fois fermé, plus personne ne peut voter
   //   On émet un événement VotingClosed
@@ -271,7 +287,8 @@ describe("VerivoVoting", function () {
       assert.equal(events.length >= 1, true);
     });
 
-    it("devrait refuser si l'appelant n'est pas l'admin", async function () {
+    it("devrait refuser si l'appelant n'est pas l'admin (avant le délai)", async function () {
+      // voter1 n'est pas admin et le délai n'est pas expiré → revert
       await assert.rejects(
         voting.write.closeVoting({ account: voter1.account })
       );
@@ -285,7 +302,9 @@ describe("VerivoVoting", function () {
     });
 
     it("devrait empêcher de voter après la fermeture", async function () {
-      await mintVotingRights([voter1.account.address]);
+      await mintVotingRights([
+        { recipient: voter1.account.address, weight: 1n },
+      ]);
       await voting.write.closeVoting({ account: minter.account });
       await assert.rejects(
         voting.write.castVote([0n], { account: voter1.account })
@@ -308,9 +327,9 @@ describe("VerivoVoting", function () {
   describe("Dépouillement", function () {
     beforeEach(async function () {
       await mintVotingRights([
-        voter1.account.address,
-        voter2.account.address,
-        voter3.account.address,
+        { recipient: voter1.account.address, weight: 1n },
+        { recipient: voter2.account.address, weight: 1n },
+        { recipient: voter3.account.address, weight: 1n },
       ]);
       await voting.write.openVoting({ account: minter.account });
       // voter1 et voter3 → choix 1, voter2 → choix 0
@@ -459,6 +478,145 @@ describe("VerivoVoting", function () {
       await voting.write.tallyVotes({ account: minter.account });
       await assert.rejects(
         voting.write.tallyVotes({ account: minter.account })
+      );
+    });
+  });
+
+  // ============================================================
+  // ÉTAPE 10 — Vote pondéré
+  // ============================================================
+  // Objectif : le poids du NFT influence le décompte des votes
+  //
+  // Concepts :
+  //   castVote appelle getVotingWeight() sur le contrat NFT
+  //   votesPerChoice[choix] += weight (au lieu de +1)
+  //   Le résultat du tally reflète les poids
+  //   Ex: 1 votant de poids 5 bat 2 votants de poids 1
+  // ============================================================
+  describe("Vote pondéré", function () {
+    it("devrait compter le vote avec le poids du NFT", async function () {
+      // voter1 a un poids de 3 → son vote compte triple
+      await mintVotingRights([
+        { recipient: voter1.account.address, weight: 3n },
+      ]);
+      await voting.write.openVoting({ account: minter.account });
+
+      await voting.write.castVote([0n], { account: voter1.account });
+      const votes = await voting.read.votesPerChoice([0n]);
+      // Le choix 0 a reçu 3 votes (pas 1)
+      assert.equal(votes, 3n);
+    });
+
+    it("devrait faire gagner le votant avec le plus gros poids", async function () {
+      // voter1 → poids 1, vote choix 0 (1 point pour choix 0)
+      // voter2 → poids 5, vote choix 1 (5 points pour choix 1)
+      // → choix 1 gagne (5 > 1)
+      await mintVotingRights([
+        { recipient: voter1.account.address, weight: 1n },
+        { recipient: voter2.account.address, weight: 5n },
+      ]);
+      await voting.write.openVoting({ account: minter.account });
+      await voting.write.castVote([0n], { account: voter1.account });
+      await voting.write.castVote([1n], { account: voter2.account });
+      await voting.write.closeVoting({ account: minter.account });
+      await voting.write.tallyVotes({ account: minter.account });
+
+      const winningChoice = await voting.read.getWinningChoice();
+      assert.equal(winningChoice, "Piste cyclable"); // choix 1
+    });
+
+    it("devrait retourner les scores pondérés dans getResults", async function () {
+      // voter1 → poids 2, vote choix 0
+      // voter2 → poids 3, vote choix 1
+      // voter3 → poids 1, vote choix 0
+      // Résultat : choix 0 = 2+1 = 3, choix 1 = 3
+      await runFullVotingCycle([
+        { account: voter1.account, choiceIndex: 0n, weight: 2n },
+        { account: voter2.account, choiceIndex: 1n, weight: 3n },
+        { account: voter3.account, choiceIndex: 0n, weight: 1n },
+      ]);
+
+      const results = await voting.read.getResults();
+      assert.equal(results[0], 3n); // Choix 0 : 2 + 1
+      assert.equal(results[1], 3n); // Choix 1 : 3
+    });
+  });
+
+  // ============================================================
+  // ÉTAPE 11 — Délai automatique
+  // ============================================================
+  // Objectif : le scrutin peut être fermé par n'importe qui après le délai
+  //
+  // Concepts :
+  //   votingDuration → durée en secondes, fixée au constructor
+  //   votingStartTime → block.timestamp enregistré à l'ouverture
+  //   block.timestamp >= votingStartTime + votingDuration → expiré
+  //   L'admin peut fermer à tout moment (même avant le délai)
+  //   N'importe qui peut fermer après le délai
+  //   evm_increaseTime → avance le temps dans les tests Hardhat
+  //     → décale l'horloge interne de la blockchain de test
+  //   evm_mine → mine un bloc pour appliquer le nouveau timestamp
+  //     → sans mine, le block.timestamp n'est pas mis à jour
+  // ============================================================
+  describe("Délai automatique", function () {
+    it("devrait stocker la durée du scrutin", async function () {
+      // votingDuration est fixé au constructor → 25200 = 7 heures
+      const duration = await voting.read.votingDuration();
+      assert.equal(duration, 25200);
+    });
+
+    it("devrait enregistrer le timestamp à l'ouverture", async function () {
+      // Avant l'ouverture, votingStartTime = 0
+      await voting.write.openVoting({ account: minter.account });
+      const startTime = await voting.read.votingStartTime();
+      // startTime > 0 → le timestamp a été enregistré par openVoting
+      assert.ok(startTime > 0n);
+    });
+
+    it("devrait permettre à l'admin de fermer avant le délai", async function () {
+      // L'admin peut fermer quand il veut, pas besoin d'attendre
+      await voting.write.openVoting({ account: minter.account });
+      await voting.write.closeVoting({ account: minter.account });
+      const status = await voting.read.status();
+      assert.equal(status, 2); // Closed
+    });
+
+    it("devrait refuser à un non-admin de fermer avant le délai", async function () {
+      // voter1 n'est pas admin ET le délai n'est pas expiré
+      // → les deux conditions sont fausses → revert
+      await voting.write.openVoting({ account: minter.account });
+      await assert.rejects(
+        voting.write.closeVoting({ account: voter1.account })
+      );
+    });
+
+    it("devrait permettre à n'importe qui de fermer après le délai", async function () {
+      await voting.write.openVoting({ account: minter.account });
+
+      // Avance le temps de 7 heures + 1 seconde dans la blockchain de test
+      // evm_increaseTime → ajoute N secondes à l'horloge
+      // evm_mine → mine un bloc pour que block.timestamp soit mis à jour
+      const connection = await network.connect();
+      await connection.provider.request({
+        method: "evm_increaseTime",
+        params: [25201], // 7 heures + 1 seconde
+      });
+      await connection.provider.request({
+        method: "evm_mine",
+        params: [],
+      });
+
+      // voter1 (pas admin) peut maintenant fermer → le délai est expiré
+      // La condition isExpired est true → le require passe
+      await voting.write.closeVoting({ account: voter1.account });
+      const status = await voting.read.status();
+      assert.equal(status, 2); // Closed
+    });
+
+    it("devrait refuser une durée de 0 au déploiement", async function () {
+      // Une durée de 0 n'a pas de sens → le scrutin serait immédiatement fermable
+      await assert.rejects(
+        deployFreshVoting("Scrutin sans durée", ["Choix A"], 0n)
       );
     });
   });
