@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
-
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 
@@ -9,6 +8,21 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 /// @dev Hérite de ERC721 (standard NFT) et AccessControl (gestion des rôles)
 ///      Soul-bound = les transferts et les approvals sont bloqués
 contract VerivoVotingNFT is ERC721, AccessControl {
+    // ====================================================================
+    // Struct
+    // ====================================================================
+    // VoterConfig regroupe l'adresse du votant et son poids de vote
+    // → utilisé par safeMintBatch pour lier les deux données
+    // → impossible de désynchroniser adresse et poids
+    // ====================================================================
+
+    /// @notice Regroupe une adresse et son poids de vote
+    /// @dev struct = type custom Solidity (comme un objet JS/TS)
+    ///      calldata → le tableau est lu directement depuis la transaction
+    struct VoterConfig {
+        address recipient;
+        uint256 weight;
+    }
 
     // ====================================================================
     // Rôles
@@ -38,40 +52,50 @@ contract VerivoVotingNFT is ERC721, AccessControl {
     ///      Utilisé pour vérifier le plafond maximumVoters
     uint256 private _activeTokenCount;
 
+    /// @dev Stocke le poids de vote de chaque NFT
+    ///      mapping(tokenId => poids) — ex: tokenId 0 → poids 3
+    ///      Le poids détermine combien "compte" le vote de ce détenteur
+    mapping(uint256 => uint256) private _tokenWeight;
+
     /// @notice Déploie le contrat NFT de vote
     /// @param minter Adresse qui recevra le MINTER_ROLE (admin organisation)
     /// @param _maximumVoters Nombre maximum de NFT mintables (plafond de votants)
     /// @dev msg.sender reçoit DEFAULT_ADMIN_ROLE → peut gérer tous les rôles
     ///      ERC721("VerivoVotingNFT", "VVOTE") → nom et symbole du token
     constructor(address minter, uint256 _maximumVoters) ERC721("VerivoVotingNFT", "VVOTE") {
-       _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-       _grantRole(MINTER_ROLE, minter);
-       maximumVoters = _maximumVoters;
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(MINTER_ROLE, minter);
+        maximumVoters = _maximumVoters;
     }
 
-    /// @notice Mint un NFT de vote pour une adresse
+    /// @notice Mint un NFT de vote avec un poids pour une adresse
     /// @param to Adresse qui recevra le NFT
-    /// @dev internal → appelée uniquement par safeMintBatch, pas directement par l'extérieur
+    /// @param weight Poids du vote (ex: 1 = vote simple, 3 = vote triple)
+    /// @dev internal → appelée uniquement par safeMintBatch
     ///      Vérifie que l'adresse n'a pas déjà un NFT (1 NFT = 1 vote)
+    ///      Le poids doit être >= 1 (un droit de vote vaut au minimum 1)
     ///      _safeMint (ERC721) vérifie que le destinataire peut recevoir un ERC721
-    function _mintVotingNFT(address to) internal {
+    function _mintVotingNFT(address to, uint256 weight) internal {
         require(balanceOf(to) == 0, "Adresse possede deja un NFT de vote");
+        require(weight >= 1, "Le poids doit etre au minimum 1");
         _safeMint(to, _nextTokenId);
+        _tokenWeight[_nextTokenId] = weight;
         _activeTokenCount++;
         _nextTokenId++;
     }
 
-    /// @notice Mint un NFT de vote pour chaque adresse du tableau
-    /// @param recipients Liste des adresses qui recevront un NFT
+    /// @notice Mint un NFT de vote pour chaque VoterConfig du tableau
+    /// @param voters Liste de VoterConfig (adresse + poids)
     /// @dev Seul point d'entrée public pour le mint
+    ///      VoterConfig lie adresse et poids → pas de désynchronisation
     ///      Vérifie la taille du batch, le plafond global, puis délègue à _mintVotingNFT
-    ///      Atomique : si une adresse échoue, tout le batch revert
-    ///      Pour un mint individuel → passer un tableau d'une seule adresse
-    function safeMintBatch(address[] calldata recipients) external onlyRole(MINTER_ROLE) {
-        require(recipients.length <= MAX_BATCH_SIZE, "Batch trop grand");
-        require(_activeTokenCount + recipients.length <= maximumVoters, "Nombre maximum de votants atteint");
-        for (uint256 i = 0; i < recipients.length; i++) {
-            _mintVotingNFT(recipients[i]);
+    ///      Atomique : si un VoterConfig échoue, tout le batch revert
+    ///      Pour un mint individuel → passer un tableau d'un seul VoterConfig
+    function safeMintBatch(VoterConfig[] calldata voters) external onlyRole(MINTER_ROLE) {
+        require(voters.length <= MAX_BATCH_SIZE, "Batch trop grand");
+        require(_activeTokenCount + voters.length <= maximumVoters, "Nombre maximum de votants atteint");
+        for (uint256 i = 0; i < voters.length; i++) {
+            _mintVotingNFT(voters[i].recipient, voters[i].weight);
         }
     }
 
@@ -90,6 +114,22 @@ contract VerivoVotingNFT is ERC721, AccessControl {
     /// @dev Appelée par le contrat VerivoVoting pour valider un votant
     function hasVotingRight(address account) external view returns (bool) {
         return balanceOf(account) > 0;
+    }
+
+    /// @notice Retourne le poids de vote d'une adresse
+    /// @param account L'adresse à vérifier
+    /// @return Le poids de vote (0 si l'adresse n'a pas de NFT)
+    /// @dev Parcourt les tokens pour trouver celui appartenant à account
+    ///      _ownerOf retourne address(0) si le token est brûlé ou inexistant
+    ///      Pour max 200 votants, la boucle est acceptable en gas (view = pas de gas)
+    function getVotingWeight(address account) external view returns (uint256) {
+        if (balanceOf(account) == 0) return 0;
+        for (uint256 i = 0; i < _nextTokenId; i++) {
+            if (_ownerOf(i) == account) {
+                return _tokenWeight[i];
+            }
+        }
+        return 0;
     }
 
     /// @notice Bloque tout transfert — NFT soul-bound
