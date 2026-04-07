@@ -199,5 +199,57 @@
       });
     });
 
+   // ============================================================
+    // ÉTAPE 5 — Ownership des scrutins créés
+    // ============================================================
+    // Objectif : vérifier qui est owner du VerivoVoting déployé
+    //
+    // Concepts :
+    //   Quand le factory fait : new VerivoVoting(...)
+    //   → msg.sender dans le constructor de VerivoVoting = le factory
+    //   → Ownable(msg.sender) dans VerivoVoting → owner = factory
+    //   Donc le owner du scrutin n'est PAS Verivo, c'est le factory
+    //   L'organisationAdministrator gère le scrutin, mais n'est pas owner
+    // ============================================================
+    describe("Ownership des scrutins créés", function () {
+      it("devrait attribuer le ownership du scrutin au factory", async function () {
+        await factory.write.createVoting([
+          votingNFT.address,
+          organisationAdministrator.account.address,
+          "Scrutin ownership",
+          ["Choix A", "Choix B"],
+        ]);
+        const votings = await factory.read.getVotings();
+        const voting = await viem.getContractAt("VerivoVoting", votings[0]);
+
+        const votingOwner = await voting.read.owner();
+        // Le factory a fait new VerivoVoting() → il est msg.sender
+        // → Ownable(msg.sender) → owner = factory
+        assert.equal(
+          votingOwner.toLowerCase(),
+          factory.address.toLowerCase()
+        );
+      });
+
+      it("le déployeur Verivo n'est pas owner du scrutin créé", async function () {
+        await factory.write.createVoting([
+          votingNFT.address,
+          organisationAdministrator.account.address,
+          "Scrutin ownership 2",
+          ["Choix A"],
+        ]);
+        const votings = await factory.read.getVotings();
+        const voting = await viem.getContractAt("VerivoVoting", votings[0]);
+
+        const votingOwner = await voting.read.owner();
+        // Verivo a déployé le factory, mais c'est le factory qui déploie les scrutins
+        // → chaîne : Verivo → factory → VerivoVoting
+        // → le owner du scrutin est le factory, pas Verivo
+        assert.notEqual(
+          votingOwner.toLowerCase(),
+          owner.account.address.toLowerCase()
+        );
+      });
+    });
 
   });
