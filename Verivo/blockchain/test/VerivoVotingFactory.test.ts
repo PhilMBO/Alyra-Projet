@@ -154,5 +154,50 @@
         assert.equal(status, 1); // Open
       });
     });
+    // ============================================================
+    // ÉTAPE 4 — Edge cases de création
+    // ============================================================
+    // Objectif : vérifier les cas limites lors de la création
+    //
+    // Concepts :
+    //   Le VerivoVoting exige >= 1 choix dans son constructor
+    //   Le factory propage le revert du constructor enfant
+    //   → si le new VerivoVoting() revert, createVoting() revert aussi
+    //   getVotings() → tableau vide si aucun scrutin créé
+    // ============================================================
+    describe("Edge cases de création", function () {
+      it("devrait retourner un tableau vide si aucun scrutin n'a été créé", async function () {
+        // Aucun createVoting() appelé → getVotings() retourne []
+        const votings = await factory.read.getVotings();
+        assert.equal(votings.length, 0);
+      });
+
+      it("devrait revert si on crée un scrutin avec 0 choix", async function () {
+        // Le constructor de VerivoVoting fait :
+        //   require(_choices.length >= 1, "Minimum 1 choix requis")
+        // → le revert remonte à travers le factory
+        await assert.rejects(
+          factory.write.createVoting([
+            votingNFT.address,
+            organisationAdministrator.account.address,
+            "Scrutin sans choix",
+            [],  // tableau vide → revert
+          ])
+        );
+      });
+
+      it("devrait permettre de créer un scrutin avec 1 seul choix", async function () {
+        // 1 choix est le minimum autorisé → doit passer
+        await factory.write.createVoting([
+          votingNFT.address,
+          organisationAdministrator.account.address,
+          "Scrutin à choix unique",
+          ["Seul choix"],
+        ]);
+        const votings = await factory.read.getVotings();
+        assert.equal(votings.length, 1);
+      });
+    });
+
 
   });
