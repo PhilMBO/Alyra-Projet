@@ -251,5 +251,60 @@
         );
       });
     });
+    
+    // ============================================================
+    // ÉTAPE 6 — Cycle complet via le factory
+    // ============================================================
+    // Objectif : prouver que le scrutin créé par le factory fonctionne
+    //   de bout en bout (test d'intégration end-to-end)
+    //
+    // Concepts :
+    //   Intégration : factory → NFT → vote → résultats
+    //   On traverse les 3 contrats dans un seul test
+    //   Le factory crée le scrutin, l'admin org le pilote
+    // ============================================================
+    describe("Cycle complet via le factory", function () {
+      it("devrait permettre un vote complet sur un scrutin créé par le factory", async function () {
+        // 1. Créer le scrutin via le factory
+        await factory.write.createVoting([
+          votingNFT.address,
+          organisationAdministrator.account.address,
+          "Budget participatif 2026",
+          ["Rénovation du parc", "Piste cyclable"],
+        ]);
+        const votings = await factory.read.getVotings();
+        const voting = await viem.getContractAt("VerivoVoting", votings[0]);
 
+        // 2. Mint un NFT de vote pour voter1
+        //    organisationAdministrator a le MINTER_ROLE sur le contrat NFT
+        await votingNFT.write.safeMintBatch(
+          [[voter1.account.address]],
+          { account: organisationAdministrator.account }
+        );
+
+        // 3. Ouvrir le scrutin (admin org)
+        await voting.write.openVoting({ account: organisationAdministrator.account });
+        const statusOpen = await voting.read.status();
+        assert.equal(statusOpen, 1); // Open
+
+        // 4. voter1 vote pour "Piste cyclable" (index 1)
+        await voting.write.castVote([1n], { account: voter1.account });
+        const hasVoted = await voting.read.hasVoted([voter1.account.address]);
+        assert.equal(hasVoted, true);
+
+        // 5. Fermer le scrutin
+        await voting.write.closeVoting({ account: organisationAdministrator.account });
+        const statusClosed = await voting.read.status();
+        assert.equal(statusClosed, 2); // Closed
+
+        // 6. Dépouiller
+        await voting.write.tallyVotes({ account: organisationAdministrator.account });
+        const statusTallied = await voting.read.status();
+        assert.equal(statusTallied, 3); // Tallied
+
+        // 7. Vérifier le résultat
+        const winningChoice = await voting.read.getWinningChoice();
+        assert.equal(winningChoice, "Piste cyclable");
+      });
+    });
   });
