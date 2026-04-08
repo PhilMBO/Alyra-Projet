@@ -591,17 +591,22 @@ describe("VerivoVoting", function () {
     });
 
   it("devrait permettre à n'importe qui de fermer après le délai", async function () {
-      await voting.write.openVoting({ account: minter.account });
-      // networkHelpers.time.increase → avance le temps ET mine un bloc
-      // time.duration.hours(7) → 25200 secondes
-      // +1 → juste après l'expiration
-      const connection = await network.connect();
-      const { networkHelpers } = connection;
-      await networkHelpers.time.increase(networkHelpers.time.duration.days(7) + 1);
+await voting.write.openVoting({ account: minter.account });
 
-      // gas: 200000n → bypasse l'estimation automatique de gas
-      // L'estimation simule la transaction avec un timestamp décalé (bug Hardhat v3)
-      // En fournissant le gas manuellement, on saute cette étape
+      const startTime = await voting.read.votingStartTime();
+      const duration = await voting.read.votingDuration();
+      // Timestamp cible = juste après l'expiration
+      const expiration = BigInt(startTime) + BigInt(duration) + 10n;
+
+      // evm_setNextBlockTimestamp → force le timestamp du PROCHAIN bloc miné
+      // Comme automine est activé, le writeContract qui suit va miner ce bloc
+      // → la transaction s'exécute dans un bloc avec le bon timestamp
+      const connection = await network.connect();
+      await connection.provider.request({
+          method: "evm_setNextBlockTimestamp",
+          params: ["0x" + expiration.toString(16)],
+      });
+
       await voting.write.closeVoting({
           account: voter1.account,
           gas: 200000n,
