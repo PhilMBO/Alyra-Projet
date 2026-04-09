@@ -591,26 +591,13 @@ describe("VerivoVoting", function () {
     });
 
   it("devrait permettre à n'importe qui de fermer après le délai", async function () {
-await voting.write.openVoting({ account: minter.account });
-
-      const startTime = await voting.read.votingStartTime();
-      const duration = await voting.read.votingDuration();
-      // Timestamp cible = juste après l'expiration
-      const expiration = BigInt(startTime) + BigInt(duration) + 10n;
-
-      // evm_setNextBlockTimestamp → force le timestamp du PROCHAIN bloc miné
-      // Comme automine est activé, le writeContract qui suit va miner ce bloc
-      // → la transaction s'exécute dans un bloc avec le bon timestamp
-      const connection = await network.connect();
-      await connection.provider.request({
-          method: "evm_setNextBlockTimestamp",
-          params: ["0x" + expiration.toString(16)],
-      });
-
-      await voting.write.closeVoting({
-          account: voter1.account,
-          gas: 200000n,
-      });
+      await voting.write.openVoting({ account: minter.account });
+        const connection = await network.connect();
+  await connection.provider.request({
+    method: "evm_increaseTime",
+    params: ["0x" + (8640000).toString(16)],
+  });
+  await connection.provider.request({ method: "evm_mine", params: [] });
       const status = await voting.read.status();
       assert.equal(status, 2); // Closed
   });
