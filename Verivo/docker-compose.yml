@@ -23,13 +23,14 @@ services:
       - postgres
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID: ${WALLET_CONNECT_PROJECT_ID}
     container_name: verivo-frontend
     restart: unless-stopped
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/index.html:/app/index.html
+    environment:
+      BACKEND_URL: http://backend:3001
     depends_on:
       - backend
 
