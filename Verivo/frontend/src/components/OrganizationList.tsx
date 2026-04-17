@@ -1,10 +1,10 @@
+import Link from "next/link";
 import type { Organization } from "@/lib/types";
 
 interface OrganizationListProps {
   organizations: Organization[];
 }
 
-// Map statut → classes Tailwind pour le badge
 const statusStyles: Record<Organization["status"], string> = {
   active:    "bg-success/10 text-success",
   suspended: "bg-warning/10 text-warning",
@@ -29,34 +29,36 @@ export function OrganizationList({ organizations }: OrganizationListProps) {
   return (
     <ul className="flex flex-col gap-3">
       {organizations.map((organization) => (
-        <li
-          key={organization.id}
-          className="flex items-center justify-between rounded border border-border p-4 hover:bg-surface transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            {/* Logo ou placeholder */}
-            {organization.logoUrl ? (
-              <img
-                src={organization.logoUrl}
-                alt={organization.name}
-                className="h-10 w-10 rounded object-cover"
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded bg-surface text-sm font-bold text-primary">
-                {organization.name.charAt(0).toUpperCase()}
+        <li key={organization.id}>
+          <Link
+            href={`/dashboard/organizations/${organization.slug}`}
+            className="flex items-center justify-between rounded border border-border p-4 hover:bg-surface transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              {organization.logoUrl ? (
+                <img
+                  src={organization.logoUrl}
+                  alt={organization.name}
+                  className="h-10 w-10 rounded object-cover"
+                />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded bg-surface text-sm font-bold text-primary">
+                  {organization.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+
+              <div>
+                <p className="font-semibold text-primary">{organization.name}</p>
+                <p className="text-sm text-text-secondary">/{organization.slug}</p>
               </div>
-            )}
-
-            <div>
-              <p className="font-semibold text-primary">{organization.name}</p>
-              <p className="text-sm text-text-secondary">/{organization.slug}</p>
             </div>
-          </div>
 
-          {/* Badge de statut */}
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusStyles[organization.status]}`}>
-            {statusLabels[organization.status]}
-          </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusStyles[organization.status]}`}
+            >
+              {statusLabels[organization.status]}
+            </span>
+          </Link>
         </li>
       ))}
     </ul>
