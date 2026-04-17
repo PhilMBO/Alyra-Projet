@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCastVote } from "@/hooks/useVote";
 import type { Choice } from "@/lib/types";
 
@@ -40,10 +40,13 @@ export function VoteForm({
     }
   };
 
-  // Quand la tx est confirmee, on previent le parent
-  if (isSuccess && hasSubmitted) {
-    setTimeout(onVoted, 500);
-  }
+  // Quand la tx est confirmee, on previent le parent (dans un effect pour eviter une boucle)
+  useEffect(() => {
+    if (isSuccess && hasSubmitted) {
+      const t = setTimeout(onVoted, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [isSuccess, hasSubmitted, onVoted]);
 
   if (isSuccess) {
     return (

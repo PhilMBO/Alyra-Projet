@@ -15,7 +15,7 @@ export interface MyElection extends Election {
     voteTxHash: string | null;
     voteExplorerUrl: string | null;
     nft: {
-      tokenId: string;
+      tokenId: string | null;
       contractAddress: string;
       status: "pending" | "minted" | "burned";
       mintTxHash: string | null;

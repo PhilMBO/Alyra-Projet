@@ -12,6 +12,9 @@ import { useOrgRole } from "@/hooks/useOrgRole";
 import { CsvUploader } from "@/components/CsvUploader";
 import { VoterList } from "@/components/VoterList";
 import { DeploymentActions } from "@/components/DeploymentActions";
+import { TallyActions } from "@/components/TallyActions";
+import { ResultsView } from "@/components/ResultsView";
+import { useResults } from "@/hooks/useResults";
 
 export default function ElectionDetailPage({
   params,
@@ -36,6 +39,7 @@ export default function ElectionDetailPage({
   const { deleteElection, isDeleting, error: deleteError } =
     useDeleteElection(orgSlug);
   const { canManage } = useOrgRole(orgSlug);
+  const { data: resultsData } = useResults(orgSlug, electionId);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -192,6 +196,28 @@ export default function ElectionDetailPage({
             nftContractAddress={nftContractAddress}
             onStateChange={refreshAll}
           />
+        </section>
+      )}
+
+      {/* Actions de cloture / depouillement (admin/organizer, apres ouverture) */}
+      {canManage && (election.status === "open" || election.status === "closed") && (
+        <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+          <h2 className="mb-4 font-semibold text-primary">
+            {election.status === "open" ? "Clore le scrutin" : "Depouiller le scrutin"}
+          </h2>
+          <TallyActions
+            organizationSlug={orgSlug}
+            election={election}
+            onStateChange={refreshAll}
+          />
+        </section>
+      )}
+
+      {/* Resultats si depouille */}
+      {election.status === "tallied" && resultsData && (
+        <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+          <h2 className="mb-4 font-semibold text-primary">Resultats</h2>
+          <ResultsView data={resultsData} organizationSlug={orgSlug} />
         </section>
       )}
 

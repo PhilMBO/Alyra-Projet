@@ -6,6 +6,9 @@ import { useAccount, useReadContract } from "wagmi";
 import { useElection } from "@/hooks/useElections";
 import { useMyElections } from "@/hooks/useMyElections";
 import { VERIVO_VOTING_NFT_ABI, VERIVO_VOTING_ABI } from "@/lib/contracts";
+import { VoteForm } from "@/components/VoteForm";
+import { ResultsView } from "@/components/ResultsView";
+import { useResults } from "@/hooks/useResults";
 
 export default function VoterElectionDetailPage({
   params,
@@ -17,6 +20,7 @@ export default function VoterElectionDetailPage({
 
   // Detail du scrutin + choix (meme endpoint que la vue admin, mais on cache les actions)
   const { election, choices, isLoading, error } = useElection(orgSlug, electionId);
+  const { data: resultsData } = useResults(orgSlug, electionId);
 
   // Info de participation via /me/elections (pour avoir NFT status + hasVoted)
   const { elections: myElections } = useMyElections();
@@ -144,23 +148,56 @@ export default function VoterElectionDetailPage({
         )}
       </section>
 
-      {/* Statut du vote */}
+      {/* Bloc de vote si scrutin ouvert */}
       {election.status === "open" && (
         <section className="rounded-lg border border-border bg-background p-6 shadow-card">
-          <h2 className="mb-2 font-semibold text-primary">Statut du scrutin</h2>
+          <h2 className="mb-4 font-semibold text-primary">Votre vote</h2>
+
           {hasVotedOnChain === true ? (
-            <p className="rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
-              Vous avez deja vote. Merci pour votre participation.
+            <div className="rounded border border-success/30 bg-success/5 p-4">
+              <p className="font-semibold text-success">Vous avez deja vote</p>
+              <p className="mt-1 text-sm text-text-secondary">
+                Merci pour votre participation. Votre vote est enregistre sur la blockchain.
+              </p>
+              {myEntry?.participation.voteExplorerUrl && (
+                <a
+                  href={myEntry.participation.voteExplorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-block text-sm text-secondary hover:underline"
+                >
+                  Voir la transaction →
+                </a>
+              )}
+            </div>
+          ) : !isNftVerified ? (
+            <p className="rounded border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+              Vous n'avez pas de droit de vote actif pour ce scrutin. Contactez l'administrateur.
             </p>
-          ) : isNftVerified ? (
-            <p className="rounded border border-secondary/30 bg-secondary/5 p-3 text-sm text-secondary">
-              Le scrutin est ouvert. Vous pouvez voter (fonctionnalite UC-5 a venir).
+          ) : !election.contractAddress ? (
+            <p className="rounded border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+              Le contrat de vote n'est pas disponible.
             </p>
           ) : (
-            <p className="rounded border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
-              Vous n'avez pas de NFT de vote. Contactez l'administrateur.
-            </p>
+            <VoteForm
+              organizationSlug={orgSlug}
+              electionId={electionId}
+              votingContractAddress={election.contractAddress}
+              choices={choices}
+              onVoted={() => {
+                // Rafraichir pour refleter has_voted et l'etat on-chain
+                window.location.reload();
+              }}
+            />
           )}
+        </section>
+      )}
+
+      {/* Resultats si scrutin depouille */}
+      {election.status === "tallied" && resultsData && (
+        <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+          <h2 className="mb-4 font-semibold text-primary">Resultats</h2>
+          <ResultsView data={resultsData} />
         </section>
       )}
 

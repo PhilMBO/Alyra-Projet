@@ -84,9 +84,9 @@ router.get("/elections", authenticate, async (req, res) => {
             votedAt: row.votedAt,
             voteTxHash: row.voteTxHash,
             voteExplorerUrl: explorerTx(row.voteTxHash),
-            nft: row.tokenId != null
+            nft: row.nftStatus === "minted" || row.nftStatus === "pending"
               ? {
-                  tokenId: String(row.tokenId),
+                  tokenId: row.tokenId != null ? String(row.tokenId) : null,
                   contractAddress: row.nftContractAddress,
                   status: row.nftStatus,
                   mintTxHash: row.mintTxHash,

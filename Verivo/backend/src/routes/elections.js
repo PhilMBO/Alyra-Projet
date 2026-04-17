@@ -823,4 +823,145 @@ router.post(
   },
 );
 
+// ============================================================
+// GET /api/organizations/:orgSlug/elections/:id/results
+// ============================================================
+// Retourne les resultats du scrutin depouille.
+// Lit on-chain getResults() + winningChoiceIndex + totalVotes.
+// Persiste dans election_results pour acces rapide.
+
+router.get(
+  "/:id/results",
+  authenticate,
+  requireOrgRole(["ADMIN", "ORGANIZER", "MEMBER"]),
+  async (req, res) => {
+    const s = `"${req.schemaName}"`;
+
+    try {
+      // 1. Charger l'election + ses choix + la liste des votants
+      const [electionRows, choicesRows, voterCountRow] = await Promise.all([
+        prisma.$queryRawUnsafe(
+          `SELECT id, title, description, voting_system AS "votingSystem",
+             status, start_date AS "startDate", end_date AS "endDate",
+             contract_address AS "contractAddress", quorum
+           FROM ${s}.elections WHERE id = $1::uuid`,
+          req.params.id,
+        ),
+        prisma.$queryRawUnsafe(
+          `SELECT id, label, description, position
+           FROM ${s}.choices WHERE election_id = $1::uuid ORDER BY position`,
+          req.params.id,
+        ),
+        prisma.$queryRawUnsafe(
+          `SELECT COUNT(*)::int AS n FROM ${s}.voter_registry WHERE election_id = $1::uuid`,
+          req.params.id,
+        ),
+      ]);
+
+      if (electionRows.length === 0) {
+        return res.status(404).json({ error: "Scrutin introuvable" });
+      }
+      const election = electionRows[0];
+      const totalRegistered = voterCountRow[0].n;
+
+      if (!election.contractAddress) {
+        return res.status(409).json({ error: "Scrutin non deploye" });
+      }
+      if (election.status !== "tallied") {
+        return res.status(409).json({
+          error: `Resultats disponibles uniquement apres depouillement (statut actuel : ${election.status})`,
+        });
+      }
+
+      // 2. Lire on-chain : getResults, winningChoiceIndex
+      const [onChainResults, winningChoiceIndexRaw] = await Promise.all([
+        publicClient.readContract({
+          address: election.contractAddress,
+          abi: votingArtifact.abi,
+          functionName: "getResults",
+        }),
+        publicClient.readContract({
+          address: election.contractAddress,
+          abi: votingArtifact.abi,
+          functionName: "winningChoiceIndex",
+        }),
+      ]);
+      const voteCounts = onChainResults.map((v) => Number(v));
+      const winningChoiceIndex = Number(winningChoiceIndexRaw);
+      const totalVotes = voteCounts.reduce((sum, n) => sum + n, 0);
+
+      // 3. Calculer percentages + ranks
+      const withPercentage = voteCounts.map((count, index) => ({
+        index,
+        voteCount: count,
+        percentage: totalVotes > 0
+          ? Math.round((count / totalVotes) * 10000) / 100
+          : 0,
+      }));
+      const sorted = [...withPercentage].sort((a, b) => b.voteCount - a.voteCount);
+      let rank = 0;
+      let lastCount = -1;
+      for (let i = 0; i < sorted.length; i++) {
+        if (sorted[i].voteCount !== lastCount) {
+          rank = i + 1;
+          lastCount = sorted[i].voteCount;
+        }
+        sorted[i].rank = rank;
+      }
+      const scored = sorted.sort((a, b) => a.index - b.index);
+
+      // 4. Persister election_results (idempotent)
+      await prisma.$transaction(async (tx) => {
+        for (let i = 0; i < choicesRows.length; i++) {
+          const choice = choicesRows[i];
+          const result = scored[i];
+          if (!result) continue;
+          await tx.$queryRawUnsafe(
+            `INSERT INTO ${s}.election_results (election_id, choice_id, vote_count, percentage, rank)
+             VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+             ON CONFLICT (election_id, choice_id)
+             DO UPDATE SET vote_count = EXCLUDED.vote_count,
+                           percentage = EXCLUDED.percentage,
+                           rank = EXCLUDED.rank,
+                           tallied_at = now()`,
+            election.id, choice.id, result.voteCount, result.percentage, result.rank,
+          );
+        }
+      }, { timeout: 15000 });
+
+      // 5. Construire la reponse
+      const participationRate = totalRegistered > 0
+        ? Math.round((totalVotes / totalRegistered) * 10000) / 100
+        : 0;
+
+      res.json({
+        election,
+        results: choicesRows.map((choice, i) => ({
+          choiceId: choice.id,
+          label: choice.label,
+          description: choice.description,
+          position: choice.position,
+          voteCount: scored[i]?.voteCount || 0,
+          percentage: scored[i]?.percentage || 0,
+          rank: scored[i]?.rank || 0,
+          isWinner: i === winningChoiceIndex,
+        })),
+        summary: {
+          totalVotes,
+          totalRegistered,
+          participationRate,
+          quorum: election.quorum || 0,
+          quorumReached: totalVotes >= (election.quorum || 0),
+          winningChoiceIndex,
+          winningChoiceLabel: choicesRows[winningChoiceIndex]?.label || null,
+        },
+        explorerUrl: explorerAddress(election.contractAddress),
+      });
+    } catch (error) {
+      console.error("Erreur /results :", error);
+      res.status(500).json({ error: "Erreur serveur", detail: error.message });
+    }
+  },
+);
+
 module.exports = router;

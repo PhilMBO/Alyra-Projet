@@ -106,6 +106,63 @@ export function useMintVotingNfts(nftContractAddress: string | null) {
 }
 
 /**
+ * Factory pour creer un hook "admin action" sur VerivoVoting
+ * (openVoting, closeVoting, tallyVotes — tous sans args).
+ */
+function useVotingAction(
+  votingContractAddress: string | null | undefined,
+  functionName: "openVoting" | "closeVoting" | "tallyVotes"
+) {
+  const { writeContractAsync, data: txHash } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash: txHash,
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trigger = useCallback(async () => {
+    if (!votingContractAddress) {
+      throw new Error("Contrat de vote pas deploye");
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const hash = await writeContractAsync({
+        address: votingContractAddress as `0x${string}`,
+        abi: VERIVO_VOTING_ABI,
+        functionName,
+        args: [],
+      });
+      return hash;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Erreur de signature";
+      setError(message);
+      throw err;
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [votingContractAddress, writeContractAsync, functionName]);
+
+  return { trigger, txHash, isSubmitting, isConfirming, isSuccess, error };
+}
+
+/**
+ * Clot le scrutin (admin uniquement, ou n'importe qui apres la deadline).
+ */
+export function useCloseVoting(votingContractAddress: string | null | undefined) {
+  const h = useVotingAction(votingContractAddress, "closeVoting");
+  return { closeVoting: h.trigger, ...h };
+}
+
+/**
+ * Depouille le scrutin (admin uniquement).
+ */
+export function useTallyVotes(votingContractAddress: string | null | undefined) {
+  const h = useVotingAction(votingContractAddress, "tallyVotes");
+  return { tallyVotes: h.trigger, ...h };
+}
+
+/**
  * Ouvre le scrutin on-chain via wagmi.
  * Appelle VerivoVoting.openVoting() depuis le wallet de l'admin.
  */
