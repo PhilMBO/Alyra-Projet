@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useConnection } from "wagmi";            // ancien useAccount (deprecie wagmi v3)
+import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { StepIndicator } from "@/components/StepIndicator";
 import { OrganizationForm, type OrganizationFormData } from "@/components/OrganizationForm";
@@ -15,7 +15,7 @@ const STEPS = ["Wallet", "Signature", "Organisation"];
 export default function RegisterPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading, register } = useAuth();
-  const { address, isConnected } = useConnection();  // Etat du wallet via wagmi
+  const { address, isConnected } = useAccount();  // Etat du wallet via wagmi
   const { signIn, isLoading: siweLoading, error: siweError } = useSiwe();
 
   const [step, setStep] = useState(1);

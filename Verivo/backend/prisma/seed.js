@@ -1,35 +1,36 @@
 const { PrismaClient } = require("@prisma/client");
-const bcrypt = require("bcrypt");
+const { Wallet } = require("ethers");
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const existing = await prisma.admin.findUnique({
-    where: { email: "superadmin@verivo.io" },
-  });
+  console.log("Seeding database...");
 
-  if (existing) {
-    console.log("Super admin existe deja.");
-    return;
-  }
+  // Clean (en dev uniquement)
+  await prisma.organizationMember.deleteMany();
+  await prisma.organization.deleteMany();
+  await prisma.user.deleteMany();
 
-  const passwordHash = await bcrypt.hash("SuperAdmin123!", 10);
+  // Deux wallets de test deterministes (Hardhat account[0] et [1])
+  const wallet1 = new Wallet("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+  const wallet2 = new Wallet("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 
-  const superAdmin = await prisma.admin.create({
+  await prisma.user.create({
     data: {
-      email: "superadmin@verivo.io",
-      passwordHash,
-      displayName: "Super Admin",
-      role: "SUPER_ADMIN",
+      walletAddress: wallet1.address,
+      displayName: "Alice (Hardhat #0)",
+    },
+  });
+  await prisma.user.create({
+    data: {
+      walletAddress: wallet2.address,
+      displayName: "Bob (Hardhat #1)",
     },
   });
 
-  console.log("Super admin cree :", superAdmin.email);
+  console.log("Done.");
+  console.log("  Alice :", wallet1.address);
+  console.log("  Bob   :", wallet2.address);
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+main().catch(console.error).finally(() => prisma.$disconnect());

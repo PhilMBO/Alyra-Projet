@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useConnection, useChainId, useSignMessage } from "wagmi";
+import { useAccount, useChainId, useSignMessage } from "wagmi";
 import { SiweMessage } from "siwe";
 
 // Ce que le hook retourne apres une signature reussie
@@ -11,9 +11,9 @@ export interface SiweResult {
 }
 
 export function useSiwe() {
-  const { address } = useConnection();     // Adresse du wallet connecte (ancien useAccount)
+  const { address } = useAccount();        // Adresse du wallet connecte
   const chainId = useChainId();            // ID de la blockchain active (ex: 137 pour Polygon)
-  const { mutateAsync } = useSignMessage();  // Fonction wagmi pour signer (ancien signMessageAsync)
+  const { signMessageAsync } = useSignMessage();  // Fonction wagmi pour signer
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export function useSiwe() {
       //    → MetaMask affiche une popup avec le message
       //    → L'utilisateur clique "Sign"
       //    → Le wallet retourne la signature cryptographique
-      const signature = await mutateAsync({ message: messageText });
+      const signature = await signMessageAsync({ message: messageText });
 
       return { message: messageText, signature };
     } catch (err) {
@@ -55,7 +55,7 @@ export function useSiwe() {
     } finally {
       setIsLoading(false);
     }
-  }, [address, chainId, mutateAsync]);
+  }, [address, chainId, signMessageAsync]);
 
   return { signIn, isLoading, error };
 }
