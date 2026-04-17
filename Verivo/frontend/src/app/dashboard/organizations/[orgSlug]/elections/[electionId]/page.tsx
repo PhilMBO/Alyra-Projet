@@ -1,9 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { use } from "react";
-import { useElection } from "@/hooks/useElections";
+import { use, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  useElection,
+  useVoters,
+  useDeleteElection,
+} from "@/hooks/useElections";
 import { CsvUploader } from "@/components/CsvUploader";
+import { VoterList } from "@/components/VoterList";
 
 export default function ElectionDetailPage({
   params,
@@ -11,7 +17,16 @@ export default function ElectionDetailPage({
   params: Promise<{ orgSlug: string; electionId: string }>;
 }) {
   const { orgSlug, electionId } = use(params);
+  const router = useRouter();
   const { election, choices, isLoading, error } = useElection(orgSlug, electionId);
+  const { voters, isLoading: votersLoading, refresh: refreshVoters } = useVoters(
+    orgSlug,
+    electionId
+  );
+  const { deleteElection, isDeleting, error: deleteError } =
+    useDeleteElection(orgSlug);
+
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) {
     return <p className="text-text-secondary">Chargement...</p>;
@@ -30,6 +45,17 @@ export default function ElectionDetailPage({
     );
   }
 
+  const handleDelete = async () => {
+    try {
+      await deleteElection(electionId);
+      router.push(`/dashboard/organizations/${orgSlug}`);
+    } catch {
+      // erreur deja geree
+    }
+  };
+
+  const isDraft = election.status === "draft";
+
   return (
     <div className="flex flex-col gap-6">
       <Link
@@ -39,12 +65,55 @@ export default function ElectionDetailPage({
         ← Retour aux scrutins
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-bold text-primary">{election.title}</h1>
-        {election.description && (
-          <p className="mt-2 text-text-secondary">{election.description}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-primary">{election.title}</h1>
+          {election.description && (
+            <p className="mt-2 text-text-secondary">{election.description}</p>
+          )}
+        </div>
+
+        {isDraft && (
+          <div className="flex gap-2">
+            <Link
+              href={`/dashboard/organizations/${orgSlug}/elections/${electionId}/edit`}
+              className="rounded border border-border px-3 py-1.5 text-sm hover:bg-surface"
+            >
+              Modifier
+            </Link>
+            {!confirmDelete ? (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="rounded border border-error/30 px-3 py-1.5 text-sm text-error hover:bg-error/5"
+              >
+                Supprimer
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="rounded bg-error px-3 py-1.5 text-sm text-white disabled:opacity-60"
+                >
+                  {isDeleting ? "Suppression..." : "Confirmer"}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded border border-border px-3 py-1.5 text-sm hover:bg-surface"
+                >
+                  Annuler
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
+
+      {deleteError && (
+        <p className="rounded border border-error/30 bg-error/5 p-2 text-sm text-error">
+          {deleteError}
+        </p>
+      )}
 
       <section className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-background p-6 shadow-card">
         <Info label="Statut" value={election.status} />
@@ -86,20 +155,32 @@ export default function ElectionDetailPage({
         </ul>
       </section>
 
-      {/* Import des votants (uniquement en draft) */}
-      {election.status === "draft" && (
+      {/* Import CSV (uniquement en draft) */}
+      {isDraft && (
         <section className="rounded-lg border border-border bg-background p-6 shadow-card">
-          <h2 className="mb-1 font-semibold text-primary">Liste electorale</h2>
+          <h2 className="mb-1 font-semibold text-primary">Importer une liste electorale</h2>
           <p className="mb-4 text-sm text-text-secondary">
-            Importez la liste des votants via un fichier CSV. Les comptes
-            seront crees automatiquement pour les wallets inconnus.
+            Les comptes seront crees automatiquement pour les wallets inconnus.
           </p>
           <CsvUploader
             organizationSlug={orgSlug}
             electionId={electionId}
+            onImportSuccess={refreshVoters}
           />
         </section>
       )}
+
+      {/* Liste des votants inscrits */}
+      <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+        <h2 className="mb-4 font-semibold text-primary">
+          Votants inscrits ({voters.length})
+        </h2>
+        {votersLoading ? (
+          <p className="text-text-secondary">Chargement...</p>
+        ) : (
+          <VoterList voters={voters} />
+        )}
+      </section>
     </div>
   );
 }

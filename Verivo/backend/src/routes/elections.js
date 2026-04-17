@@ -165,6 +165,146 @@ router.get(
 );
 
 // ============================================================
+// DELETE /api/organizations/:orgSlug/elections/:id
+// ============================================================
+
+router.delete(
+  "/:id",
+  authenticate,
+  requireOrgRole(["ADMIN", "ORGANIZER"]),
+  async (req, res) => {
+    const s = `"${req.schemaName}"`;
+    try {
+      const current = await prisma.$queryRawUnsafe(
+        `SELECT status FROM ${s}.elections WHERE id = $1::uuid`,
+        req.params.id,
+      );
+      if (current.length === 0) {
+        return res.status(404).json({ error: "Scrutin introuvable" });
+      }
+      if (current[0].status !== "draft") {
+        return res.status(409).json({
+          error: "Seuls les scrutins en draft peuvent etre supprimes",
+        });
+      }
+
+      // CASCADE supprime les choices, voter_registry, voter_nfts, participation_log
+      await prisma.$queryRawUnsafe(
+        `DELETE FROM ${s}.elections WHERE id = $1::uuid`,
+        req.params.id,
+      );
+
+      res.json({ deleted: true });
+    } catch (error) {
+      console.error("Erreur DELETE /elections/:id :", error);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  },
+);
+
+// ============================================================
+// GET /api/organizations/:orgSlug/elections/:id/voters
+// ============================================================
+
+router.get(
+  "/:id/voters",
+  authenticate,
+  requireOrgRole(["ADMIN", "ORGANIZER", "MEMBER"]),
+  async (req, res) => {
+    const s = `"${req.schemaName}"`;
+    try {
+      const voters = await prisma.$queryRawUnsafe(
+        `SELECT
+           u.id AS "userId",
+           u.wallet_address AS "walletAddress",
+           u.display_name   AS "displayName",
+           vr.eligible,
+           vr.registered_at AS "registeredAt",
+           vn.nft_status    AS "nftStatus",
+           vn.token_id      AS "tokenId"
+         FROM ${s}.voter_registry vr
+         JOIN shared.users u ON u.id = vr.user_id
+         LEFT JOIN ${s}.voter_nfts vn
+           ON vn.election_id = vr.election_id
+          AND vn.user_id = vr.user_id
+          AND vn.nft_type = 'voting_right'
+         WHERE vr.election_id = $1::uuid
+         ORDER BY u.display_name`,
+        req.params.id,
+      );
+      res.json({ voters, count: voters.length });
+    } catch (error) {
+      console.error("Erreur GET /elections/:id/voters :", error);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  },
+);
+
+// ============================================================
+// PUT /api/organizations/:orgSlug/elections/:id/choices
+// ============================================================
+// Remplace la totalite des choix (uniquement en draft).
+
+router.put(
+  "/:id/choices",
+  authenticate,
+  requireOrgRole(["ADMIN", "ORGANIZER"]),
+  [
+    body("choices").isArray({ min: 2 }),
+    body("choices.*.label").trim().isLength({ min: 1, max: 255 }),
+    body("choices.*.description").optional().trim(),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const s = `"${req.schemaName}"`;
+
+    try {
+      const current = await prisma.$queryRawUnsafe(
+        `SELECT status FROM ${s}.elections WHERE id = $1::uuid`,
+        req.params.id,
+      );
+      if (current.length === 0) {
+        return res.status(404).json({ error: "Scrutin introuvable" });
+      }
+      if (current[0].status !== "draft") {
+        return res.status(409).json({ error: "Modification impossible : scrutin deja deploye" });
+      }
+
+      const choices = await prisma.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe(
+          `DELETE FROM ${s}.choices WHERE election_id = $1::uuid`,
+          req.params.id,
+        );
+        const inserted = [];
+        for (let i = 0; i < req.body.choices.length; i++) {
+          const c = req.body.choices[i];
+          const r = await tx.$queryRawUnsafe(
+            `INSERT INTO ${s}.choices (election_id, label, description, position)
+             VALUES ($1::uuid, $2, $3, $4)
+             RETURNING *`,
+            req.params.id,
+            c.label,
+            c.description || null,
+            i,
+          );
+          inserted.push(r[0]);
+        }
+        return inserted;
+      });
+
+      res.json({ choices });
+    } catch (error) {
+      console.error("Erreur PUT /choices :", error);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  },
+);
+
+// ============================================================
 // PATCH /api/organizations/:orgSlug/elections/:id
 // ============================================================
 

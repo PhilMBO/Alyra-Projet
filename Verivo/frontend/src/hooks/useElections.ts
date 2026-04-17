@@ -9,6 +9,16 @@ import type {
   CreateElectionResponse,
 } from "@/lib/types";
 
+export interface VoterRow {
+  userId: string;
+  walletAddress: string;
+  displayName: string | null;
+  eligible: boolean;
+  registeredAt: string;
+  nftStatus: "pending" | "minted" | "burned" | null;
+  tokenId: string | null;
+}
+
 /**
  * Hook pour lister les scrutins d'une organisation.
  */
@@ -70,6 +80,126 @@ export function useElection(organizationSlug: string, electionId: string) {
   }, [refresh]);
 
   return { election, choices, isLoading, error, refresh };
+}
+
+/**
+ * Hook pour lister les votants inscrits.
+ */
+export function useVoters(organizationSlug: string, electionId: string) {
+  const [voters, setVoters] = useState<VoterRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<{ voters: VoterRow[]; count: number }>(
+        `/api/organizations/${organizationSlug}/elections/${electionId}/voters`
+      );
+      setVoters(data.voters);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur de chargement");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [organizationSlug, electionId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { voters, isLoading, error, refresh };
+}
+
+/**
+ * Hook pour supprimer un scrutin (draft uniquement).
+ */
+export function useDeleteElection(organizationSlug: string) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const deleteElection = useCallback(
+    async (electionId: string): Promise<void> => {
+      setIsDeleting(true);
+      setError(null);
+      try {
+        await fetch(
+          `/api/organizations/${organizationSlug}/elections/${electionId}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("verivo_token")}`,
+            },
+          }
+        ).then(async (r) => {
+          if (!r.ok) {
+            const data = await r.json().catch(() => ({}));
+            throw new ApiError(r.status, data);
+          }
+        });
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? (err.data.error as string) || "Erreur serveur"
+            : "Erreur inattendue";
+        setError(message);
+        throw err;
+      } finally {
+        setIsDeleting(false);
+      }
+    },
+    [organizationSlug]
+  );
+
+  return { deleteElection, isDeleting, error };
+}
+
+/**
+ * Hook pour mettre a jour un scrutin (titre, dates, quorum — draft uniquement).
+ */
+export function useUpdateElection(
+  organizationSlug: string,
+  electionId: string
+) {
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateElection = useCallback(
+    async (patch: Partial<CreateElectionRequest>): Promise<Election> => {
+      setIsUpdating(true);
+      setError(null);
+      try {
+        const token = localStorage.getItem("verivo_token");
+        const response = await fetch(
+          `/api/organizations/${organizationSlug}/elections/${electionId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(patch),
+          }
+        );
+        const data = await response.json();
+        if (!response.ok) throw new ApiError(response.status, data);
+        return data;
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? (err.data.error as string) || "Erreur serveur"
+            : "Erreur inattendue";
+        setError(message);
+        throw err;
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [organizationSlug, electionId]
+  );
+
+  return { updateElection, isUpdating, error };
 }
 
 /**

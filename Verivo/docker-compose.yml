@@ -41,17 +41,23 @@ services:
         condition: service_healthy
 
   frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID: ${WALLET_CONNECT_PROJECT_ID}
-        BACKEND_URL: http://backend:3001
+    # Mode DEV : utiliser l'image node officielle + monter le code + next dev
+    # (plus de rebuild apres chaque modif, hot reload Next.js actif)
+    image: node:20-alpine
     container_name: verivo-frontend
     restart: unless-stopped
+    working_dir: /app
     ports:
       - "3000:3000"
     environment:
       BACKEND_URL: http://backend:3001
+      NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID: ${WALLET_CONNECT_PROJECT_ID}
+      WATCHPACK_POLLING: "true"   # force le polling (Windows bind mount)
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules          # volume anonyme : garde les deps Linux compilees
+      - /app/.next
+    command: sh -c "npm install && npm run dev"
     depends_on:
       - backend
 
