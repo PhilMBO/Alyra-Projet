@@ -1,5 +1,5 @@
 const Papa = require("papaparse");
-const { getAddress } = require("ethers");
+const { getAddress } = require("viem");
 
 /**
  * Parse un buffer CSV et retourne un tableau d'objets.

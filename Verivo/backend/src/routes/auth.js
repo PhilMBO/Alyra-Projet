@@ -1,6 +1,6 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
-const { getAddress } = require("ethers");
+const { getAddress } = require("viem");
 const { PrismaClient } = require("@prisma/client");
 
 const { verifySiwe, SiweVerificationError } = require("../lib/siwe");

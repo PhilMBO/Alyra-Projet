@@ -10,6 +10,7 @@ import {
 } from "@/hooks/useElections";
 import { CsvUploader } from "@/components/CsvUploader";
 import { VoterList } from "@/components/VoterList";
+import { DeploymentActions } from "@/components/DeploymentActions";
 
 export default function ElectionDetailPage({
   params,
@@ -18,11 +19,17 @@ export default function ElectionDetailPage({
 }) {
   const { orgSlug, electionId } = use(params);
   const router = useRouter();
-  const { election, choices, isLoading, error } = useElection(orgSlug, electionId);
+  const { election, choices, isLoading, error, refresh: refreshElection } =
+    useElection(orgSlug, electionId);
   const { voters, isLoading: votersLoading, refresh: refreshVoters } = useVoters(
     orgSlug,
     electionId
   );
+
+  const refreshAll = () => {
+    refreshElection();
+    refreshVoters();
+  };
   const { deleteElection, isDeleting, error: deleteError } =
     useDeleteElection(orgSlug);
 
@@ -155,8 +162,8 @@ export default function ElectionDetailPage({
         </ul>
       </section>
 
-      {/* Import CSV (uniquement en draft) */}
-      {isDraft && (
+      {/* Import CSV (uniquement en draft + pas encore deploye) */}
+      {isDraft && !election.contractAddress && (
         <section className="rounded-lg border border-border bg-background p-6 shadow-card">
           <h2 className="mb-1 font-semibold text-primary">Importer une liste electorale</h2>
           <p className="mb-4 text-sm text-text-secondary">
@@ -169,6 +176,17 @@ export default function ElectionDetailPage({
           />
         </section>
       )}
+
+      {/* Actions de deploiement on-chain */}
+      <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+        <h2 className="mb-4 font-semibold text-primary">Deploiement on-chain</h2>
+        <DeploymentActions
+          organizationSlug={orgSlug}
+          election={election}
+          voters={voters}
+          onStateChange={refreshAll}
+        />
+      </section>
 
       {/* Liste des votants inscrits */}
       <section className="rounded-lg border border-border bg-background p-6 shadow-card">

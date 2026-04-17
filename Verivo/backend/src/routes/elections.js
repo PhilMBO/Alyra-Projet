@@ -5,6 +5,21 @@ const { PrismaClient } = require("@prisma/client");
 const { authenticate } = require("../middleware/auth");
 const { requireOrgRole } = require("../middleware/orgRole");
 const { parseCsv, validateRow, findOrCreateUser } = require("../lib/csvImport");
+const {
+  deployVotingNft,
+  createVotingViaFactory,
+  computeDurationSeconds,
+} = require("../lib/deployment");
+const {
+  explorerAddress,
+  explorerTx,
+  publicClient,
+  votingArtifact,
+  votingNftArtifact,
+} = require("../lib/blockchain");
+
+// Mapping enum on-chain → label DB
+const STATUS_ON_CHAIN = ["draft", "open", "closed", "tallied"];
 
 const router = express.Router({ mergeParams: true });
 const prisma = new PrismaClient();
@@ -483,6 +498,266 @@ router.post(
     } catch (error) {
       console.error("Erreur import CSV :", error);
       res.status(500).json({ error: "Erreur lors de l'import", detail: error.message });
+    }
+  },
+);
+
+// ============================================================
+// POST /api/organizations/:orgSlug/elections/:id/deploy
+// ============================================================
+// Deploiement on-chain :
+//   1. Deploie VerivoVotingNFT (minter = adminWallet de l'org)
+//   2. Appelle Factory.createVoting pour deployer VerivoVoting
+//   3. Enregistre contract_address + nft_contract_address en DB
+//   4. Laisse status = 'draft' (l'admin ouvrira via openVoting depuis son wallet)
+//
+// Cote Verivo : paie le gas du deploiement.
+// Cote admin : recoit le MINTER_ROLE et appellera safeMintBatch depuis son wallet.
+
+router.post(
+  "/:id/deploy",
+  authenticate,
+  requireOrgRole(["ADMIN", "ORGANIZER"]),
+  async (req, res) => {
+    const s = `"${req.schemaName}"`;
+
+    try {
+      // 1. Charger election + choix + votants
+      const [electionRows, choicesRows, votersRows] = await Promise.all([
+        prisma.$queryRawUnsafe(`SELECT * FROM ${s}.elections WHERE id = $1::uuid`, req.params.id),
+        prisma.$queryRawUnsafe(
+          `SELECT label FROM ${s}.choices WHERE election_id = $1::uuid ORDER BY position`,
+          req.params.id,
+        ),
+        prisma.$queryRawUnsafe(
+          `SELECT vr.user_id, u.wallet_address
+           FROM ${s}.voter_registry vr
+           JOIN shared.users u ON u.id = vr.user_id
+           WHERE vr.election_id = $1::uuid AND vr.eligible = true`,
+          req.params.id,
+        ),
+      ]);
+
+      if (electionRows.length === 0) {
+        return res.status(404).json({ error: "Scrutin introuvable" });
+      }
+      const election = electionRows[0];
+
+      // 2. Verifier les prerequis
+      if (election.status !== "draft") {
+        return res.status(409).json({ error: "Scrutin deja deploye ou non-draft" });
+      }
+      if (election.contract_address) {
+        return res.status(409).json({ error: "Contrat deja deploye" });
+      }
+      if (choicesRows.length < 2) {
+        return res.status(400).json({ error: "Minimum 2 choix requis" });
+      }
+      if (votersRows.length === 0) {
+        return res.status(400).json({ error: "Aucun votant inscrit" });
+      }
+
+      // 3. Determiner le wallet admin de l'organisation
+      const adminMember = await prisma.organizationMember.findFirst({
+        where: { organizationId: req.organization.id, role: "ADMIN" },
+        include: { user: true },
+      });
+      if (!adminMember) {
+        return res.status(500).json({ error: "Pas d'admin pour cette organisation" });
+      }
+      const adminWallet = adminMember.user.walletAddress;
+
+      // 4. Calculer la duree
+      const durationSeconds = computeDurationSeconds(election.start_date, election.end_date);
+
+      // 5. Deployer le contrat NFT
+      console.log(`[deploy] Deploiement VerivoVotingNFT pour ${election.title}...`);
+      const nftDeploy = await deployVotingNft(adminWallet, votersRows.length);
+      console.log(`[deploy] NFT deployee : ${nftDeploy.address}`);
+
+      // 6. Deployer le contrat Voting via Factory
+      console.log(`[deploy] Creation VerivoVoting via Factory...`);
+      const votingDeploy = await createVotingViaFactory({
+        nftAddress: nftDeploy.address,
+        adminWallet,
+        title: election.title,
+        choices: choicesRows.map((c) => c.label),
+        votingDurationSeconds: durationSeconds,
+      });
+      console.log(`[deploy] Voting deployee : ${votingDeploy.address}`);
+
+      // 7. Mettre a jour la DB
+      await prisma.$transaction(async (tx) => {
+        // Sauvegarder l'adresse du contrat Voting
+        await tx.$queryRawUnsafe(
+          `UPDATE ${s}.elections
+           SET contract_address = $1, updated_at = now()
+           WHERE id = $2::uuid`,
+          votingDeploy.address,
+          election.id,
+        );
+
+        // Sauvegarder l'adresse du contrat NFT pour chaque voter_nft en pending
+        // (le mint on-chain sera fait par l'admin ensuite, nft_status reste en pending)
+        await tx.$queryRawUnsafe(
+          `UPDATE ${s}.voter_nfts
+           SET contract_address = $1
+           WHERE election_id = $2::uuid AND nft_type = 'voting_right' AND nft_status = 'pending'`,
+          nftDeploy.address,
+          election.id,
+        );
+      }, { timeout: 30000 });
+
+      // 8. Reponse
+      res.json({
+        contractAddress: votingDeploy.address,
+        nftContractAddress: nftDeploy.address,
+        deployTxHash: votingDeploy.createTxHash,
+        nftDeployTxHash: nftDeploy.deployTxHash,
+        totalVoters: votersRows.length,
+        durationSeconds,
+        adminWallet,
+        explorerUrl: explorerAddress(votingDeploy.address),
+        nftExplorerUrl: explorerAddress(nftDeploy.address),
+        nextStep: "admin_mint",
+      });
+    } catch (error) {
+      console.error("Erreur /deploy :", error);
+      if (error.code === "INSUFFICIENT_FUNDS") {
+        return res.status(500).json({
+          error: "Wallet operateur Verivo sans gas. Funder l'adresse.",
+          code: "INSUFFICIENT_FUNDS",
+        });
+      }
+      if (error.code === "NETWORK_ERROR" || error.code === "ECONNREFUSED") {
+        return res.status(503).json({
+          error: "RPC injoignable. Verifier RPC_URL.",
+          code: "RPC_DOWN",
+        });
+      }
+      res.status(500).json({ error: "Echec deploiement", detail: error.message });
+    }
+  },
+);
+
+// ============================================================
+// POST /api/organizations/:orgSlug/elections/:id/sync
+// ============================================================
+// Synchronise l'etat DB avec la blockchain apres une action on-chain
+// (mint de NFTs ou openVoting/closeVoting/tally par l'admin).
+//
+// Lit :
+//   - VerivoVoting.status() → met a jour elections.status
+//   - VerivoVotingNFT.balanceOf(wallet) pour chaque voter_registry
+//     → met a jour voter_nfts.nft_status = 'minted' si balance > 0
+
+router.post(
+  "/:id/sync",
+  authenticate,
+  requireOrgRole(["ADMIN", "ORGANIZER", "MEMBER"]),
+  async (req, res) => {
+    const s = `"${req.schemaName}"`;
+
+    try {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT id, contract_address, status FROM ${s}.elections WHERE id = $1::uuid`,
+        req.params.id,
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ error: "Scrutin introuvable" });
+      }
+      const election = rows[0];
+      if (!election.contract_address) {
+        return res.status(409).json({ error: "Scrutin non deploye" });
+      }
+
+      // 1. Lire le status on-chain
+      const statusRaw = Number(
+        await publicClient.readContract({
+          address: election.contract_address,
+          abi: votingArtifact.abi,
+          functionName: "status",
+        })
+      );
+      const newStatus = STATUS_ON_CHAIN[statusRaw] || "draft";
+
+      // 2. Trouver l'adresse du contrat NFT (via voting.votingNFT())
+      const nftAddress = await publicClient.readContract({
+        address: election.contract_address,
+        abi: votingArtifact.abi,
+        functionName: "votingNFT",
+      });
+
+      // 3. Lire les votants inscrits et verifier leur balanceOf
+      const voters = await prisma.$queryRawUnsafe(
+        `SELECT vr.user_id, u.wallet_address
+         FROM ${s}.voter_registry vr
+         JOIN shared.users u ON u.id = vr.user_id
+         WHERE vr.election_id = $1::uuid`,
+        req.params.id,
+      );
+
+      // Lecture en parallele des balanceOf (une multicall manuelle)
+      const balances = await Promise.all(
+        voters.map((voter) =>
+          publicClient.readContract({
+            address: nftAddress,
+            abi: votingNftArtifact.abi,
+            functionName: "balanceOf",
+            args: [voter.wallet_address],
+          })
+        )
+      );
+      let mintedCount = 0;
+      for (const b of balances) {
+        if (Number(b) > 0) mintedCount++;
+      }
+
+      // 4. Mettre a jour la DB en transaction
+      await prisma.$transaction(async (tx) => {
+        if (newStatus !== election.status) {
+          await tx.$queryRawUnsafe(
+            `UPDATE ${s}.elections
+             SET status = $1::${s}.election_status, updated_at = now()
+             WHERE id = $2::uuid`,
+            newStatus,
+            election.id,
+          );
+        }
+
+        for (let i = 0; i < voters.length; i++) {
+          const voter = voters[i];
+          const n = Number(balances[i]);
+          if (n > 0) {
+            await tx.$queryRawUnsafe(
+              `UPDATE ${s}.voter_nfts
+               SET nft_status = 'minted',
+                   contract_address = $1,
+                   minted_at = COALESCE(minted_at, now())
+               WHERE election_id = $2::uuid
+                 AND user_id = $3::uuid
+                 AND nft_type = 'voting_right'`,
+              nftAddress,
+              election.id,
+              voter.user_id,
+            );
+          }
+        }
+      }, { timeout: 30000 });
+
+      res.json({
+        status: newStatus,
+        mintedCount,
+        totalVoters: voters.length,
+        onChain: {
+          status: newStatus,
+          nftAddress,
+          votingAddress: election.contract_address,
+        },
+      });
+    } catch (error) {
+      console.error("Erreur /sync :", error);
+      res.status(500).json({ error: "Erreur de synchronisation", detail: error.message });
     }
   },
 );

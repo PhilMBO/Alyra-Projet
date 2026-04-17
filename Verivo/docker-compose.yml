@@ -27,15 +27,27 @@ services:
     environment:
       DATABASE_URL: postgresql://verivo:verivo_secret@postgres:5432/verivo?schema=shared
       PORT: 3001
-      # UC-1 wallet-only : JWT + domaine SIWE attendu
+      # UC-1 wallet-only
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-prod-please-use-long-random-string-here}
       FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost:3000}
+      # UC-3 blockchain
+      # En dev, Hardhat node tourne sur l'hote Windows (port 8545)
+      # Depuis le container on passe par host.docker.internal
+      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      CHAIN_ID: ${CHAIN_ID:-31337}
+      # Cle privee du compte Hardhat #0 (dev uniquement, deterministe)
+      VERIVO_OPERATOR_PRIVATE_KEY: ${VERIVO_OPERATOR_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
+      VERIVO_FACTORY_ADDRESS: ${VERIVO_FACTORY_ADDRESS:-}
+      BLOCK_EXPLORER_URL: ${BLOCK_EXPLORER_URL:-}
     volumes:
-      # Mount du code source pour le dev : editions sans rebuild.
-      # Le node_modules du container (compile pour Linux) est preserve
-      # grace au volume anonyme qui override le mount du src.
       - ./backend/src:/app/src
       - ./backend/prisma:/app/prisma
+      - ./backend/scripts:/app/scripts
+      # Artifacts Hardhat pour que le backend charge les ABIs
+      - ./blockchain/artifacts:/app/blockchain/artifacts:ro
+    extra_hosts:
+      # Necessaire sur Linux pour que host.docker.internal fonctionne
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
