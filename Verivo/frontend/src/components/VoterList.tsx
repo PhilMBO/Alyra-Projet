@@ -8,8 +8,8 @@ interface VoterListProps {
 
 const NFT_STATUS_LABELS: Record<string, { label: string; className: string }> = {
   pending: { label: "En attente", className: "bg-border text-text-secondary" },
-  minted: { label: "Mint", className: "bg-success/10 text-success" },
-  burned: { label: "Brule", className: "bg-error/10 text-error" },
+  minted: { label: "Accorde", className: "bg-success/10 text-success" },
+  burned: { label: "Retire", className: "bg-error/10 text-error" },
 };
 
 export function VoterList({ voters }: VoterListProps) {
@@ -28,7 +28,7 @@ export function VoterList({ voters }: VoterListProps) {
           <tr className="bg-surface text-left text-xs uppercase text-text-secondary">
             <th className="px-3 py-2">Nom</th>
             <th className="px-3 py-2">Wallet</th>
-            <th className="px-3 py-2">Statut NFT</th>
+            <th className="px-3 py-2">Droit de vote</th>
             <th className="px-3 py-2">Token ID</th>
           </tr>
         </thead>

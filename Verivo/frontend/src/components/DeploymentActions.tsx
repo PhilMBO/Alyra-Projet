@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAccount } from "wagmi";
 import type { Election } from "@/lib/types";
 import {
@@ -15,6 +15,7 @@ interface DeploymentActionsProps {
   organizationSlug: string;
   election: Election;
   voters: VoterRow[];
+  nftContractAddress: string | null;
   onStateChange: () => void;
 }
 
@@ -22,6 +23,7 @@ export function DeploymentActions({
   organizationSlug,
   election,
   voters,
+  nftContractAddress,
   onStateChange,
 }: DeploymentActionsProps) {
   const { isConnected } = useAccount();
@@ -41,35 +43,6 @@ export function DeploymentActions({
     organizationSlug,
     election.id
   );
-
-  // Hook mint (wagmi — admin wallet)
-  // On cherche l'adresse du contrat NFT via le premier voter_nft
-  const nftAddress = voters.find((v) => v.nftStatus)?.nftStatus
-    ? // L'adresse est dans voter_nfts.contract_address — mais on ne l'a pas
-      // dans VoterRow. On va la recuperer differemment :
-      null
-    : null;
-
-  // Pour recuperer l'adresse du NFT, on appelle le backend /sync qui renvoie onChain.nftAddress
-  const [nftContractAddress, setNftContractAddress] = useState<string | null>(null);
-
-  // On recupere l'adresse NFT au premier rendu si le scrutin est deploye
-  useEffect(() => {
-    if (!isDeployed) return;
-    let cancelled = false;
-    api
-      .post<{ onChain: { nftAddress: string } }>(
-        `/api/organizations/${organizationSlug}/elections/${election.id}/sync`,
-        {}
-      )
-      .then((data) => {
-        if (!cancelled) setNftContractAddress(data.onChain.nftAddress);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isDeployed, organizationSlug, election.id]);
 
   const {
     mint,
@@ -179,13 +152,14 @@ export function DeploymentActions({
         </div>
       )}
 
-      {/* Etape 2 : Minter les NFTs */}
+      {/* Etape 2 : Assigner les droits de vote (mint NFT soul-bound) */}
       {isDeployed && someNotMinted && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
           <p className="text-sm text-text-secondary">
-            Les contrats sont deployes. Vous devez maintenant minter les NFTs de vote
-            pour les {voters.filter((v) => v.nftStatus !== "minted").length} votants
-            inscrits. Cette action est signee depuis votre wallet.
+            Les contrats sont deployes. Vous devez maintenant assigner les droits
+            de vote aux {voters.filter((v) => v.nftStatus !== "minted").length}{" "}
+            votants inscrits (mint d'un NFT soul-bound par votant). Cette action
+            est signee depuis votre wallet.
           </p>
           <button
             onClick={handleMint}
@@ -196,7 +170,7 @@ export function DeploymentActions({
               ? "Signature..."
               : isMintConfirming
                 ? "Confirmation on-chain..."
-                : `Minter ${voters.filter((v) => v.nftStatus !== "minted").length} NFTs`}
+                : `Assigner ${voters.filter((v) => v.nftStatus !== "minted").length} droits de vote`}
           </button>
           {mintError && <p className="text-sm text-error">{mintError}</p>}
         </div>
@@ -240,7 +214,7 @@ export function DeploymentActions({
 function Stepper({ current }: { current: number }) {
   const steps = [
     { n: 1, label: "Deploiement" },
-    { n: 2, label: "Mint NFTs" },
+    { n: 2, label: "Droits de vote" },
     { n: 3, label: "Ouverture" },
     { n: 4, label: "Vote en cours" },
   ];

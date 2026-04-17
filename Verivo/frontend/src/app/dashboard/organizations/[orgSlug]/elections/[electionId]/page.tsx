@@ -22,10 +22,12 @@ export default function ElectionDetailPage({
   const router = useRouter();
   const { election, choices, isLoading, error, refresh: refreshElection } =
     useElection(orgSlug, electionId);
-  const { voters, isLoading: votersLoading, refresh: refreshVoters } = useVoters(
-    orgSlug,
-    electionId
-  );
+  const {
+    voters,
+    nftContractAddress,
+    isLoading: votersLoading,
+    refresh: refreshVoters,
+  } = useVoters(orgSlug, electionId);
 
   const refreshAll = () => {
     refreshElection();
@@ -187,22 +189,25 @@ export default function ElectionDetailPage({
             organizationSlug={orgSlug}
             election={election}
             voters={voters}
+            nftContractAddress={nftContractAddress}
             onStateChange={refreshAll}
           />
         </section>
       )}
 
-      {/* Liste des votants inscrits */}
-      <section className="rounded-lg border border-border bg-background p-6 shadow-card">
-        <h2 className="mb-4 font-semibold text-primary">
-          Votants inscrits ({voters.length})
-        </h2>
-        {votersLoading ? (
-          <p className="text-text-secondary">Chargement...</p>
-        ) : (
-          <VoterList voters={voters} />
-        )}
-      </section>
+      {/* Liste des votants inscrits (admin/organizer uniquement) */}
+      {canManage && (
+        <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+          <h2 className="mb-4 font-semibold text-primary">
+            Votants inscrits ({voters.length})
+          </h2>
+          {votersLoading ? (
+            <p className="text-text-secondary">Chargement...</p>
+          ) : (
+            <VoterList voters={voters} />
+          )}
+        </section>
+      )}
     </div>
   );
 }

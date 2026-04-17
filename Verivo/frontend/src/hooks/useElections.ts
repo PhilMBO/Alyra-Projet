@@ -17,6 +17,7 @@ export interface VoterRow {
   registeredAt: string;
   nftStatus: "pending" | "minted" | "burned" | null;
   tokenId: string | null;
+  nftContractAddress: string | null;
 }
 
 /**
@@ -87,6 +88,7 @@ export function useElection(organizationSlug: string, electionId: string) {
  */
 export function useVoters(organizationSlug: string, electionId: string) {
   const [voters, setVoters] = useState<VoterRow[]>([]);
+  const [nftContractAddress, setNftContractAddress] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,10 +96,13 @@ export function useVoters(organizationSlug: string, electionId: string) {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await api.get<{ voters: VoterRow[]; count: number }>(
-        `/api/organizations/${organizationSlug}/elections/${electionId}/voters`
-      );
+      const data = await api.get<{
+        voters: VoterRow[];
+        count: number;
+        nftContractAddress: string | null;
+      }>(`/api/organizations/${organizationSlug}/elections/${electionId}/voters`);
       setVoters(data.voters);
+      setNftContractAddress(data.nftContractAddress);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur de chargement");
     } finally {
@@ -109,7 +114,7 @@ export function useVoters(organizationSlug: string, electionId: string) {
     refresh();
   }, [refresh]);
 
-  return { voters, isLoading, error, refresh };
+  return { voters, nftContractAddress, isLoading, error, refresh };
 }
 
 /**

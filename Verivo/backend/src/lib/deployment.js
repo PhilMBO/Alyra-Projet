@@ -1,10 +1,14 @@
-const { decodeEventLog } = require("viem");
+const { decodeEventLog, keccak256, toBytes } = require("viem");
 const {
   publicClient,
   walletClient,
+  operatorAccount,
   factoryArtifact,
   votingNftArtifact,
 } = require("./blockchain");
+
+// MINTER_ROLE = keccak256("MINTER_ROLE") comme dans VerivoVotingNFT.sol
+const MINTER_ROLE = keccak256(toBytes("MINTER_ROLE"));
 
 const FACTORY_ADDRESS = process.env.VERIVO_FACTORY_ADDRESS;
 if (!FACTORY_ADDRESS) {
@@ -30,6 +34,51 @@ async function deployVotingNft(adminWallet, maximumVoters) {
   return {
     address: receipt.contractAddress,
     deployTxHash: hash,
+  };
+}
+
+/**
+ * Mint en batch les NFTs de vote pour tous les votants.
+ * Verivo s'auto-grant MINTER_ROLE (il a DEFAULT_ADMIN_ROLE), mint, puis revoke.
+ * Resultat : admin org garde MINTER_ROLE, Verivo n'en a plus.
+ */
+async function batchMintVotingNfts(nftAddress, voters) {
+  // 1. Grant MINTER_ROLE a Verivo operator
+  const grantHash = await walletClient.writeContract({
+    address: nftAddress,
+    abi: votingNftArtifact.abi,
+    functionName: "grantRole",
+    args: [MINTER_ROLE, operatorAccount.address],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: grantHash });
+
+  // 2. Construire le tableau VoterConfig { recipient, weight }
+  const voterConfigs = voters.map((v) => ({
+    recipient: v.walletAddress,
+    weight: 1n,
+  }));
+
+  // 3. safeMintBatch
+  const mintHash = await walletClient.writeContract({
+    address: nftAddress,
+    abi: votingNftArtifact.abi,
+    functionName: "safeMintBatch",
+    args: [voterConfigs],
+  });
+  const mintReceipt = await publicClient.waitForTransactionReceipt({ hash: mintHash });
+
+  // 4. Revoke MINTER_ROLE de Verivo
+  const revokeHash = await walletClient.writeContract({
+    address: nftAddress,
+    abi: votingNftArtifact.abi,
+    functionName: "revokeRole",
+    args: [MINTER_ROLE, operatorAccount.address],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: revokeHash });
+
+  return {
+    mintTxHash: mintHash,
+    mintBlockNumber: mintReceipt.blockNumber,
   };
 }
 
@@ -103,6 +152,7 @@ function computeDurationSeconds(startDate, endDate) {
 
 module.exports = {
   deployVotingNft,
+  batchMintVotingNfts,
   createVotingViaFactory,
   computeDurationSeconds,
 };

@@ -16,6 +16,7 @@ export default function OrganizationDashboardPage({
   const { elections, isLoading, error, refresh } = useElectionList(orgSlug);
   const { count: orgCount } = useMyOrganizations();
   const { canManage } = useOrgRole(orgSlug);
+  console.log("[debug]", { orgSlug, canManage });
 
   // Lien "Retour au dashboard" utile seulement si l'user a plusieurs orgs
   const showDashboardLink = orgCount > 1;
