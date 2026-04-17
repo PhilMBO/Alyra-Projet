@@ -30,6 +30,12 @@ services:
       # UC-1 wallet-only : JWT + domaine SIWE attendu
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-prod-please-use-long-random-string-here}
       FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost:3000}
+    volumes:
+      # Mount du code source pour le dev : editions sans rebuild.
+      # Le node_modules du container (compile pour Linux) est preserve
+      # grace au volume anonyme qui override le mount du src.
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
     depends_on:
       postgres:
         condition: service_healthy

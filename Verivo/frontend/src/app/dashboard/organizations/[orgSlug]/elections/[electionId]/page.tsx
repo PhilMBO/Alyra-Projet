@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use } from "react";
 import { useElection } from "@/hooks/useElections";
+import { CsvUploader } from "@/components/CsvUploader";
 
 export default function ElectionDetailPage({
   params,
@@ -84,6 +85,21 @@ export default function ElectionDetailPage({
           ))}
         </ul>
       </section>
+
+      {/* Import des votants (uniquement en draft) */}
+      {election.status === "draft" && (
+        <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+          <h2 className="mb-1 font-semibold text-primary">Liste electorale</h2>
+          <p className="mb-4 text-sm text-text-secondary">
+            Importez la liste des votants via un fichier CSV. Les comptes
+            seront crees automatiquement pour les wallets inconnus.
+          </p>
+          <CsvUploader
+            organizationSlug={orgSlug}
+            electionId={electionId}
+          />
+        </section>
+      )}
     </div>
   );
 }
