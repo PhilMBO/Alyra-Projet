@@ -13,6 +13,10 @@ COPY . .
 # car Next.js les inline dans le JavaScript genere
 ARG NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID
 ENV NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=$NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID
+# BACKEND_URL doit aussi etre presente au BUILD car Next.js evalue rewrites()
+# au build time et bake l'URL dans le routes-manifest.json
+ARG BACKEND_URL
+ENV BACKEND_URL=$BACKEND_URL
 RUN npm run build
 
 # Stage 3 : Image de production minimale

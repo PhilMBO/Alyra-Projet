@@ -11,24 +11,39 @@ services:
       POSTGRES_DB: verivo
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verivo -d verivo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build: ./backend
     container_name: verivo-backend
     restart: unless-stopped
+    ports:
+      - "3001:3001"
+      - "5555:5555"   # Prisma Studio (dev uniquement)
     environment:
       DATABASE_URL: postgresql://verivo:verivo_secret@postgres:5432/verivo?schema=shared
       PORT: 3001
+      # UC-1 wallet-only : JWT + domaine SIWE attendu
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-prod-please-use-long-random-string-here}
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-localhost:3000}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
       context: ./frontend
       args:
         NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID: ${WALLET_CONNECT_PROJECT_ID}
+        BACKEND_URL: http://backend:3001
     container_name: verivo-frontend
     restart: unless-stopped
+    ports:
+      - "3000:3000"
     environment:
       BACKEND_URL: http://backend:3001
     depends_on:
