@@ -8,6 +8,8 @@ export interface User {
   displayName: string;
 }
 
+export type MemberRole = "admin" | "organizer" | "member";
+
 // Organisation creee par un admin
 export interface Organization {
   id: string;
@@ -16,6 +18,7 @@ export interface Organization {
   schemaName: string;          // Nom du schema tenant PostgreSQL
   status: "active" | "suspended" | "archived";
   logoUrl?: string;
+  role?: MemberRole;           // Role de l'utilisateur courant dans cette org
 }
 
 // === Contrats API (request/response) ===
@@ -39,6 +42,19 @@ export interface RegisterResponse {
   user: User;
   organization: Organization;
   token: string;               // JWT valide 24h
+}
+
+// Corps du POST /api/auth/wallet-login
+export interface WalletLoginRequest {
+  walletAddress: string;
+  signature: string;
+  message: string;
+}
+
+// Reponse du POST /api/auth/wallet-login
+export interface WalletLoginResponse {
+  user: User;
+  token: string;
 }
 // === Etat de l'authentification ===
 export interface AuthState {

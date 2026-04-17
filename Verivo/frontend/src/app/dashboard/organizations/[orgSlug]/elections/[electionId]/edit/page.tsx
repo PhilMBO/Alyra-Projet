@@ -7,6 +7,7 @@ import {
   useElection,
   useUpdateElection,
 } from "@/hooks/useElections";
+import { useOrgRole } from "@/hooks/useOrgRole";
 import type { CreateElectionRequest } from "@/lib/types";
 
 export default function EditElectionPage({
@@ -21,6 +22,13 @@ export default function EditElectionPage({
     orgSlug,
     electionId
   );
+  const { canManage, isLoading: roleLoading } = useOrgRole(orgSlug);
+
+  useEffect(() => {
+    if (!roleLoading && !canManage) {
+      router.replace(`/dashboard/organizations/${orgSlug}/elections/${electionId}`);
+    }
+  }, [roleLoading, canManage, orgSlug, electionId, router]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

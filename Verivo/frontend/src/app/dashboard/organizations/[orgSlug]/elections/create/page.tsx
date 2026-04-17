@@ -1,10 +1,11 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ElectionForm } from "@/components/ElectionForm";
 import { useCreateElection } from "@/hooks/useElections";
+import { useOrgRole } from "@/hooks/useOrgRole";
 
 export default function CreateElectionPage({
   params,
@@ -14,6 +15,18 @@ export default function CreateElectionPage({
   const { orgSlug } = use(params);
   const router = useRouter();
   const { createElection, isSubmitting, error } = useCreateElection(orgSlug);
+  const { canManage, isLoading: roleLoading } = useOrgRole(orgSlug);
+
+  // Bloquer l'acces aux MEMBERs
+  useEffect(() => {
+    if (!roleLoading && !canManage) {
+      router.replace(`/dashboard/organizations/${orgSlug}`);
+    }
+  }, [roleLoading, canManage, orgSlug, router]);
+
+  if (roleLoading || !canManage) {
+    return <p className="text-text-secondary">Chargement...</p>;
+  }
 
   const handleSubmit = async (data: Parameters<typeof createElection>[0]) => {
     try {

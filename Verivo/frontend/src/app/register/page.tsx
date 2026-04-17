@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -189,6 +190,13 @@ export default function RegisterPage() {
             </div>
           )}
         </div>
+
+        <p className="mt-6 text-center text-sm text-text-secondary">
+          Deja inscrit ?{" "}
+          <Link href="/login" className="text-secondary hover:underline">
+            Se connecter
+          </Link>
+        </p>
       </div>
     </div>
   );

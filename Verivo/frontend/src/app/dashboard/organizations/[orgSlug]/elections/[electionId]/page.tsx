@@ -8,6 +8,7 @@ import {
   useVoters,
   useDeleteElection,
 } from "@/hooks/useElections";
+import { useOrgRole } from "@/hooks/useOrgRole";
 import { CsvUploader } from "@/components/CsvUploader";
 import { VoterList } from "@/components/VoterList";
 import { DeploymentActions } from "@/components/DeploymentActions";
@@ -32,6 +33,7 @@ export default function ElectionDetailPage({
   };
   const { deleteElection, isDeleting, error: deleteError } =
     useDeleteElection(orgSlug);
+  const { canManage } = useOrgRole(orgSlug);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -80,7 +82,7 @@ export default function ElectionDetailPage({
           )}
         </div>
 
-        {isDraft && (
+        {isDraft && canManage && (
           <div className="flex gap-2">
             <Link
               href={`/dashboard/organizations/${orgSlug}/elections/${electionId}/edit`}
@@ -162,8 +164,8 @@ export default function ElectionDetailPage({
         </ul>
       </section>
 
-      {/* Import CSV (uniquement en draft + pas encore deploye) */}
-      {isDraft && !election.contractAddress && (
+      {/* Import CSV (uniquement en draft + pas encore deploye + admin/organizer) */}
+      {isDraft && !election.contractAddress && canManage && (
         <section className="rounded-lg border border-border bg-background p-6 shadow-card">
           <h2 className="mb-1 font-semibold text-primary">Importer une liste electorale</h2>
           <p className="mb-4 text-sm text-text-secondary">
@@ -177,16 +179,18 @@ export default function ElectionDetailPage({
         </section>
       )}
 
-      {/* Actions de deploiement on-chain */}
-      <section className="rounded-lg border border-border bg-background p-6 shadow-card">
-        <h2 className="mb-4 font-semibold text-primary">Deploiement on-chain</h2>
-        <DeploymentActions
-          organizationSlug={orgSlug}
-          election={election}
-          voters={voters}
-          onStateChange={refreshAll}
-        />
-      </section>
+      {/* Actions de deploiement on-chain (admin/organizer uniquement) */}
+      {canManage && (
+        <section className="rounded-lg border border-border bg-background p-6 shadow-card">
+          <h2 className="mb-4 font-semibold text-primary">Deploiement on-chain</h2>
+          <DeploymentActions
+            organizationSlug={orgSlug}
+            election={election}
+            voters={voters}
+            onStateChange={refreshAll}
+          />
+        </section>
+      )}
 
       {/* Liste des votants inscrits */}
       <section className="rounded-lg border border-border bg-background p-6 shadow-card">

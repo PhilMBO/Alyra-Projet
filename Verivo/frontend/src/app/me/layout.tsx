@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { Header } from "@/components/Header";
 
-// Ce layout protege TOUTES les pages sous /dashboard/*
-// Si l'utilisateur n'est pas authentifie, il est redirige vers /login
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+// Layout qui protege /me/* : redirige vers /register si non authentifie
+export default function MeLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
 
@@ -17,7 +16,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [isLoading, isAuthenticated, router]);
 
-  // Pendant la verification
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -25,11 +23,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
     );
   }
-
-  // Pas authentifie → on attend la redirection
-  if (!isAuthenticated) {
-    return null;
-  }
+  if (!isAuthenticated) return null;
 
   return (
     <div className="min-h-screen">

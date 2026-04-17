@@ -13,9 +13,9 @@ export default function HomePage() {
     if (isLoading) return;
 
     if (isAuthenticated) {
-      router.replace("/dashboard");  // replace (pas push) pour ne pas garder / dans l'historique
+      router.replace("/dashboard");
     } else {
-      router.replace("/register");
+      router.replace("/login");
     }
   }, [isAuthenticated, isLoading, router]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { OrganizationList } from "@/components/OrganizationList";
 import { api } from "@/lib/api";
@@ -8,6 +9,7 @@ import type { Organization } from "@/lib/types";
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -19,6 +21,13 @@ export default function DashboardPage() {
       .catch((err) => console.error("Erreur chargement organisations:", err))
       .finally(() => setIsLoading(false));
   }, []);
+
+  // Si une seule organisation : redirection auto
+  useEffect(() => {
+    if (!isLoading && organizations.length === 1) {
+      router.replace(`/dashboard/organizations/${organizations[0].slug}`);
+    }
+  }, [isLoading, organizations, router]);
 
   return (
     <div className="flex flex-col gap-6">
