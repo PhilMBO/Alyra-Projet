@@ -5,44 +5,73 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["shared"]
 }
+
+// ==== Enums ====
 
 enum OrganizationStatus {
   ACTIVE
   SUSPENDED
   ARCHIVED
+
+  @@schema("shared")
 }
 
-enum AdminRole {
-  SUPER_ADMIN
-  ORG_ADMIN
+enum MemberRole {
+  ADMIN      // gere l'organisation
+  ORGANIZER  // cree des scrutins
+  MEMBER     // participe aux scrutins
+
+  @@schema("shared")
 }
 
-model Admin {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  displayName  String    @map("display_name")
-  role         AdminRole @default(ORG_ADMIN)
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+// ==== Modeles ====
 
-  organizations Organization[]
+// Utilisateur global identifie par son wallet Ethereum
+model User {
+  id                  String       @id @default(uuid()) @db.Uuid
+  walletAddress       String       @unique @map("wallet_address") @db.VarChar(42)
+  displayName         String?      @map("display_name") @db.VarChar(255)
+  identityVerified    Boolean      @default(false) @map("identity_verified")
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
-  @@map("admins")
+  memberships         OrganizationMember[]
+
+  @@map("users")
+  @@schema("shared")
 }
 
+// Organisation (tenant)
 model Organization {
-  id        String             @id @default(uuid())
-  name      String
-  slug      String             @unique
-  logo      String?
-  status    OrganizationStatus @default(ACTIVE)
-  adminId   String             @map("admin_id")
-  createdAt DateTime           @default(now()) @map("created_at")
-  updatedAt DateTime           @updatedAt @map("updated_at")
+  id          String             @id @default(uuid()) @db.Uuid
+  name        String             @db.VarChar(255)
+  slug        String             @unique @db.VarChar(100)
+  schemaName  String             @unique @map("schema_name") @db.VarChar(100)
+  logoUrl     String?            @map("logo_url") @db.Text
+  status      OrganizationStatus @default(ACTIVE)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz
 
-  admin Admin @relation(fields: [adminId], references: [id])
+  members     OrganizationMember[]
 
   @@map("organizations")
+  @@schema("shared")
+}
+
+// Lien user <-> organization avec role
+model OrganizationMember {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizationId  String       @map("organization_id") @db.Uuid
+  userId          String       @map("user_id") @db.Uuid
+  role            MemberRole   @default(MEMBER)
+  joinedAt        DateTime     @default(now()) @map("joined_at") @db.Timestamptz
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+  @@schema("shared")
 }
