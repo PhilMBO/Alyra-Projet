@@ -38,6 +38,17 @@ jobs:
       - name: Run tests
         run: npx hardhat test
 
+      - name: Coverage
+        run: npx hardhat coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: Verivo/blockchain/coverage/
+          retention-days: 14
+
   # ==============================================================
   # Backend : install + verification syntaxique (pas d'infra en CI)
   # ==============================================================
