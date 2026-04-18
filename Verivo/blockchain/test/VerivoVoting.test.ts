@@ -592,12 +592,13 @@ describe("VerivoVoting", function () {
 
   it("devrait permettre à n'importe qui de fermer après le délai", async function () {
       // On utilise UNE SEULE connection : deploiement + time travel + close
-      // Autrement chaque network.connect() cree une instance EDR isolee
+      // Chaque network.connect() cree une instance EDR isolee
+      // networkHelpers est expose automatiquement par le toolbox
       const connection = await network.connect();
-      const { viem } = connection;
+      const { viem, networkHelpers } = connection;
       const [, shortMinter, shortVoter] = await viem.getWalletClients();
 
-      // Deployer un scrutin avec duree tres courte (5s) pour tester le delai
+      // Deployer un scrutin avec duree courte (5s) pour tester le delai
       const shortVoting = await viem.deployContract("VerivoVoting", [
         votingNFT.address,
         shortMinter.account.address,
@@ -607,12 +608,11 @@ describe("VerivoVoting", function () {
       ]);
       await shortVoting.write.openVoting({ account: shortMinter.account });
 
-      // Avancer le temps de 100s (> duree de 5s) dans la meme connection
-      await connection.provider.request({
-        method: "evm_increaseTime",
-        params: ["0x" + (100).toString(16)],
-      });
-      await connection.provider.request({ method: "evm_mine", params: [] });
+      // Avancer le temps avec l'API Hardhat Network Helpers
+      // time.increase(seconds) mine un nouveau bloc avec timestamp + seconds
+      await networkHelpers.time.increase(
+        networkHelpers.time.duration.seconds(10),
+      );
 
       // Un non-admin peut fermer apres expiration
       await shortVoting.write.closeVoting({ account: shortVoter.account });
