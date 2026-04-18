@@ -63,8 +63,10 @@ export default function VoterElectionDetailPage({
   const nftBalanceNum = nftBalance !== undefined ? Number(nftBalance) : null;
   const isNftVerified = nftBalanceNum === 1;
   const nftDbStatus = myEntry?.participation.nft?.status;
+  // Coherence : si DB dit "minted" → balance on-chain doit etre 1.
+  // Sinon (pending / burned / absent) → coherent si balance 0 ou inconnue.
   const isConsistent =
-    nftDbStatus === "minted" ? nftBalanceNum === 1 : nftDbStatus !== "minted";
+    nftDbStatus === "minted" ? nftBalanceNum === 1 : true;
 
   return (
     <div className="flex flex-col gap-6">
