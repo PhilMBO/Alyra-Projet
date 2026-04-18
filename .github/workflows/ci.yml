@@ -1,0 +1,102 @@
+name: CI Verivo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ==============================================================
+  # Smart contracts : compile + tests (Hardhat)
+  # ==============================================================
+  blockchain:
+    name: Smart contracts (compile + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Verivo/blockchain
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Verivo/blockchain/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npx hardhat compile
+
+      - name: Run tests
+        run: npx hardhat test
+
+  # ==============================================================
+  # Backend : install + verification syntaxique (pas d'infra en CI)
+  # ==============================================================
+  backend:
+    name: Backend (install + prisma generate)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Verivo/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Verivo/backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Verify syntax (node --check)
+        run: |
+          find src -name "*.js" -exec node --check {} \;
+          find scripts -name "*.js" -exec node --check {} \;
+
+  # ==============================================================
+  # Frontend : lint + build (Next.js)
+  # ==============================================================
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Verivo/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: Verivo/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        # Variables necessaires au build Next.js (valeurs factices pour la CI)
+        env:
+          NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID: ci-placeholder
+          BACKEND_URL: http://localhost:3001
+        run: npm run build
