@@ -35,11 +35,9 @@ jobs:
       - name: Compile contracts
         run: npx hardhat compile
 
-      - name: Run tests
-        run: npx hardhat test
-
-      - name: Coverage
-        run: npx hardhat coverage
+      - name: Run tests with coverage
+        # Hardhat 3 : coverage integree via --coverage
+        run: npx hardhat test --coverage
 
       - name: Upload coverage report
         if: always()
