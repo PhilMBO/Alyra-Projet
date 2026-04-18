@@ -592,15 +592,17 @@ describe("VerivoVoting", function () {
 
   it("devrait permettre à n'importe qui de fermer après le délai", async function () {
       await voting.write.openVoting({ account: minter.account });
-        const connection = await network.connect();
-  await connection.provider.request({
-    method: "evm_increaseTime",
-    params: ["0x" + (8640000).toString(16)],
-  });
-  await connection.provider.request({ method: "evm_mine", params: [] });
+      const connection = await network.connect();
+      await connection.provider.request({
+        method: "evm_increaseTime",
+        params: ["0x" + (8640000).toString(16)],
+      });
+      await connection.provider.request({ method: "evm_mine", params: [] });
+      // Un non-admin peut fermer apres expiration
+      await voting.write.closeVoting({ account: voter1.account });
       const status = await voting.read.status();
       assert.equal(status, 2); // Closed
-  });
+    });
 
     it("devrait refuser une durée de 0 au déploiement", async function () {
       // Une durée de 0 n'a pas de sens → le scrutin serait immédiatement fermable

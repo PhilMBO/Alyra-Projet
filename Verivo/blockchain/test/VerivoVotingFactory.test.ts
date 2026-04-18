@@ -288,9 +288,10 @@
         const voting = await viem.getContractAt("VerivoVoting", votings[0]);
 
         // 2. Mint un NFT de vote pour voter1
+        //    safeMintBatch attend un tableau de VoterConfig { recipient, weight }
         //    organisationAdministrator a le MINTER_ROLE sur le contrat NFT
         await votingNFT.write.safeMintBatch(
-          [[voter1.account.address]],
+          [[{ recipient: voter1.account.address, weight: 1n }]],
           { account: organisationAdministrator.account }
         );
 
