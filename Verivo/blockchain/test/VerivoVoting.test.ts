@@ -591,16 +591,32 @@ describe("VerivoVoting", function () {
     });
 
   it("devrait permettre à n'importe qui de fermer après le délai", async function () {
-      await voting.write.openVoting({ account: minter.account });
+      // On utilise UNE SEULE connection : deploiement + time travel + close
+      // Autrement chaque network.connect() cree une instance EDR isolee
       const connection = await network.connect();
+      const { viem } = connection;
+      const [, shortMinter, shortVoter] = await viem.getWalletClients();
+
+      // Deployer un scrutin avec duree tres courte (5s) pour tester le delai
+      const shortVoting = await viem.deployContract("VerivoVoting", [
+        votingNFT.address,
+        shortMinter.account.address,
+        "Test delai court",
+        ["A", "B"],
+        5n,
+      ]);
+      await shortVoting.write.openVoting({ account: shortMinter.account });
+
+      // Avancer le temps de 100s (> duree de 5s) dans la meme connection
       await connection.provider.request({
         method: "evm_increaseTime",
-        params: ["0x" + (8640000).toString(16)],
+        params: ["0x" + (100).toString(16)],
       });
       await connection.provider.request({ method: "evm_mine", params: [] });
+
       // Un non-admin peut fermer apres expiration
-      await voting.write.closeVoting({ account: voter1.account });
-      const status = await voting.read.status();
+      await shortVoting.write.closeVoting({ account: shortVoter.account });
+      const status = await shortVoting.read.status();
       assert.equal(status, 2); // Closed
     });
 
