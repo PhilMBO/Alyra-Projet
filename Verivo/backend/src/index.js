@@ -5,6 +5,7 @@ const authRoutes = require("./routes/auth");
 const electionsRoutes = require("./routes/elections");
 const meRoutes = require("./routes/me");
 const publicRoutes = require("./routes/public");
+const { ensureFactoryDeployed } = require("./lib/factory");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,6 +19,17 @@ app.use("/api/organizations/:orgSlug/elections", electionsRoutes);
 app.use("/api/me", meRoutes);
 app.use("/api/public", publicRoutes);
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+async function start() {
+  try {
+    await ensureFactoryDeployed();
+  } catch (err) {
+    console.error("Echec init Factory :", err.message);
+    process.exit(1);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+start();

@@ -6,16 +6,10 @@ const {
   factoryArtifact,
   votingNftArtifact,
 } = require("./blockchain");
+const { getFactoryAddress } = require("./factory");
 
 // MINTER_ROLE = keccak256("MINTER_ROLE") comme dans VerivoVotingNFT.sol
 const MINTER_ROLE = keccak256(toBytes("MINTER_ROLE"));
-
-const FACTORY_ADDRESS = process.env.VERIVO_FACTORY_ADDRESS;
-if (!FACTORY_ADDRESS) {
-  console.warn(
-    "WARN : VERIVO_FACTORY_ADDRESS manquant. Deployer la factory : npm run deploy:factory",
-  );
-}
 
 /**
  * Deploie VerivoVotingNFT depuis le wallet operateur Verivo.
@@ -93,12 +87,13 @@ async function createVotingViaFactory({
   choices,
   votingDurationSeconds,
 }) {
-  if (!FACTORY_ADDRESS) {
-    throw new Error("VERIVO_FACTORY_ADDRESS manquant");
+  const factoryAddress = getFactoryAddress();
+  if (!factoryAddress) {
+    throw new Error("Factory non deployee : verifier les logs de demarrage du backend");
   }
 
   const hash = await walletClient.writeContract({
-    address: FACTORY_ADDRESS,
+    address: factoryAddress,
     abi: factoryArtifact.abi,
     functionName: "createVoting",
     args: [
